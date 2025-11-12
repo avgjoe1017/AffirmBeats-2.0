@@ -1,0 +1,135 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id
+  email         String    @unique
+  name          String?
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  Profile       Profile?
+  preferences   UserPreferences?
+  affirmationSessions AffirmationSession[]
+  subscription  UserSubscription?
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@map("verification")
+}
+
+model Profile {
+  id     Int    @id @default(autoincrement())
+  handle String @unique
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique
+}
+
+model UserPreferences {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voice         String   @default("neutral") // neutral/confident/whisper
+  pace          String   @default("normal") // slow/normal/fast
+  noise         String   @default("rain") // rain/brown/none
+  pronounStyle  String   @default("you") // you/i
+  intensity     String   @default("gentle") // gentle/assertive
+  updatedAt     DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+model AffirmationSession {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal         String // sleep/focus/calm/manifest
+  title        String
+  affirmations String // JSON string of affirmation lines
+  voiceId      String
+  pace         String
+  noise        String
+  lengthSec    Int // duration in seconds
+  audioUrl     String?
+  isFavorite   Boolean  @default(false)
+  binauralCategory String? // delta/theta/alpha/beta/gamma
+  binauralHz   String? // e.g., "0.5-4", "4-8", "8-14", "14-30", "30-100"
+  createdAt    DateTime @default(now())
+
+  @@map("affirmation_session")
+}
+
+model UserSubscription {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier              String   @default("free") // free/pro
+  status            String   @default("active") // active/cancelled/expired
+  billingPeriod     String?  // monthly/yearly (null for free)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd Boolean  @default(false)
+  customSessionsUsedThisMonth Int @default(0)
+  lastResetDate     DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("user_subscription")
+}
