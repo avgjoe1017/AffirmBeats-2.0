@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, ScrollView, AppState, AppStateStatus, Dimensions } from "react-native";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { View, Text, Pressable, ScrollView, AppState, AppStateStatus, Dimensions, Alert } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { X, Play, Pause, Heart, RotateCcw, Shuffle, ChevronDown, Settings } from "lucide-react-native";
+import { Play, Pause, Heart, RotateCcw, Shuffle, ChevronDown, Settings, Copy, Check } from "lucide-react-native";
 import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { setAudioModeAsync } from "expo-audio";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import type { RootStackScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
 import type { GetSessionsResponse } from "@/shared/contracts";
-import { api } from "@/lib/api";
+import { api, BACKEND_URL } from "@/lib/api";
 import AudioMixerModal from "@/components/AudioMixerModal";
+import { useAudioManager } from "@/utils/audioManager";
+import { getBinauralBeatUrl, getBackgroundSoundUrl, type BinauralCategory, type BackgroundSound } from "@/utils/audioFiles";
 
 type Props = RootStackScreenProps<"Playback">;
 type Session = GetSessionsResponse["sessions"][0];
@@ -62,7 +66,8 @@ const FloatingParticle = ({ index, isPlaying }: { index: number; isPlaying: bool
       floatY.value = 0;
       fadeAnim.value = 0;
     }
-  }, [isPlaying, index]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, index]); // floatX, floatY, fadeAnim, movePattern are stable shared values
 
   const particleStyle = useAnimatedStyle(() => ({
     opacity: interpolate(fadeAnim.value, [0, 0.5, 1], [0.1, 0.4, 0.1]),
@@ -113,7 +118,8 @@ const BreathingCircle = ({ isPlaying, color }: { isPlaying: boolean; color: stri
         false
       );
     }
-  }, [isPlaying]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying]); // breathe and rotate are stable shared values
 
   const circleStyle = useAnimatedStyle(() => ({
     // Slower fade with pause at peak
@@ -236,54 +242,100 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
   const setCurrentTime = useAppStore((s) => s.setCurrentTime);
   const updateSession = useAppStore((s) => s.updateSession);
   const addSession = useAppStore((s) => s.addSession);
+  const preferences = useAppStore((s) => s.preferences);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioMixer, setShowAudioMixer] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  // Audio manager for multi-track playback
+  const audioManager = useAudioManager();
+  
+  // Get volume settings from store
+  const audioMixerVolumes = useAppStore((s) => s.audioMixerVolumes);
+
+  // Use ref to track currentSession to avoid dependency issues
+  const currentSessionRef = useRef(currentSession);
+  currentSessionRef.current = currentSession;
 
   // Find session from library or use current session
-  const session = sessions.find((s) => s.id === sessionId) ||
-    (currentSession?.sessionId === sessionId ? {
-      id: currentSession.sessionId,
-      title: currentSession.title,
-      goal: currentSession.goal,
-      affirmations: currentSession.affirmations,
-      lengthSec: currentSession.lengthSec,
-      voiceId: currentSession.voiceId,
-      pace: currentSession.pace,
-      noise: currentSession.noise,
-      isFavorite: false,
-      createdAt: new Date().toISOString(),
-    } : null);
+  // Don't include currentSession in deps to prevent recalculation loops
+  const session = useMemo(() => {
+    const foundInSessions = sessions.find((s) => s.id === sessionId);
+    if (foundInSessions) return foundInSessions;
+    
+    // Fallback to currentSession only if not in sessions array
+    // Use ref to avoid dependency on currentSession
+    const current = currentSessionRef.current;
+    if (current?.sessionId === sessionId) {
+      return {
+        id: current.sessionId,
+        title: current.title,
+        goal: current.goal,
+        affirmations: current.affirmations,
+        lengthSec: current.lengthSec,
+        voiceId: current.voiceId,
+        pace: current.pace,
+        noise: current.noise,
+        isFavorite: false,
+        createdAt: new Date().toISOString(),
+        binauralCategory: current.binauralCategory,
+        binauralHz: current.binauralHz,
+      };
+    }
+    return null;
+  }, [sessions, sessionId]); // Removed currentSession from deps - use ref instead
+
+  // Track the last session ID we set to prevent infinite loops
+  const lastSetSessionIdRef = useRef<string | null>(null);
 
   // Set this session as the current session for MiniPlayer to work
+  // Use ref to prevent infinite loops when session object changes
   useEffect(() => {
-    if (session && (!currentSession || currentSession.sessionId !== session.id)) {
-      console.log("[PlaybackScreen] Setting current session for MiniPlayer:", session.id);
-      setCurrentSession({
-        sessionId: session.id,
-        title: session.title,
-        goal: session.goal,
-        affirmations: session.affirmations,
-        lengthSec: session.lengthSec,
-        voiceId: session.voiceId,
-        pace: session.pace,
-        noise: session.noise,
-        binauralCategory: session.binauralCategory,
-        binauralHz: session.binauralHz,
-      });
+    if (session && session.id !== lastSetSessionIdRef.current) {
+      // Only set if it's different from what we last set
+      if (!currentSession || currentSession.sessionId !== session.id) {
+        console.log("[PlaybackScreen] Setting current session for MiniPlayer:", session.id);
+        lastSetSessionIdRef.current = session.id; // Track what we're setting
+        setCurrentSession({
+          sessionId: session.id,
+          title: session.title,
+          goal: session.goal,
+          affirmations: session.affirmations,
+          lengthSec: session.lengthSec,
+          voiceId: session.voiceId,
+          pace: session.pace,
+          noise: session.noise,
+          binauralCategory: session.binauralCategory,
+          binauralHz: session.binauralHz,
+        });
+      }
     }
-  }, [session?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, setCurrentSession]); // Only depend on session ID, not currentSession (use ref check instead)
 
-  const foundInSessions = !!sessions.find((s) => s.id === sessionId);
-  const foundInCurrentSession = currentSession?.sessionId === sessionId;
-  console.log("[PlaybackScreen] Session lookup:", {
-    sessionId,
-    found: !!session,
-    goal: session?.goal,
-    foundInSessions,
-    foundInCurrentSession,
-    totalSessions: sessions.length
-  });
+  // Memoize session lookup calculations to prevent unnecessary re-renders
+  const foundInSessions = useMemo(() => 
+    !!sessions.find((s) => s.id === sessionId),
+    [sessions, sessionId]
+  );
+  const foundInCurrentSession = useMemo(() => 
+    currentSession?.sessionId === sessionId,
+    [currentSession, sessionId]
+  );
+
+  // Debug logging only when session state actually changes
+  useEffect(() => {
+    console.log("[PlaybackScreen] Session lookup:", {
+      sessionId,
+      found: !!session,
+      goal: session?.goal,
+      foundInSessions,
+      foundInCurrentSession,
+      totalSessions: sessions.length
+    });
+  }, [sessionId, session, foundInSessions, foundInCurrentSession, sessions.length]);
 
   // Set up audio mode for background playback
   useEffect(() => {
@@ -316,23 +368,107 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
     };
   }, []);
 
-  // Simulate playback progress
+  // Load audio tracks when session changes
   useEffect(() => {
-    if (!isPlaying || !session) return;
+    if (!session) return;
 
-    const interval = setInterval(() => {
-      setCurrentTime((prevTime) => {
-        const newTime = prevTime + 1;
-        if (newTime >= session.lengthSec) {
-          setIsPlaying(false);
-          return session.lengthSec;
+    const loadAudio = async () => {
+      try {
+        setIsLoadingAudio(true);
+        console.log("[PlaybackScreen] Loading audio for session:", session.id);
+
+        // Load affirmations (TTS)
+        await audioManager.loadAffirmations(
+          session.affirmations,
+          (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
+          (session.pace || "normal") as "slow" | "normal" | "fast",
+          preferences.affirmationSpacing || 8
+        );
+
+        // Load binaural beats if category is available
+        if (session.binauralCategory) {
+          try {
+            const binauralUrl = getBinauralBeatUrl(session.binauralCategory as BinauralCategory, BACKEND_URL);
+            console.log("[PlaybackScreen] Loading binaural beats from:", binauralUrl);
+            await audioManager.loadBinauralBeats(binauralUrl);
+          } catch (error) {
+            console.warn("[PlaybackScreen] Could not load binaural beats:", error);
+          }
         }
-        return newTime;
-      });
-    }, 1000);
+
+        // Load background noise
+        const backgroundUrl = getBackgroundSoundUrl((session.noise || "none") as BackgroundSound, BACKEND_URL);
+        if (backgroundUrl) {
+          try {
+            console.log("[PlaybackScreen] Loading background sound from:", backgroundUrl);
+            await audioManager.loadBackgroundNoise(backgroundUrl);
+          } catch (error) {
+            console.warn("[PlaybackScreen] Could not load background noise:", error);
+          }
+        }
+
+        // Apply volume settings
+        await audioManager.setAffirmationsVolume(audioMixerVolumes.affirmations);
+        await audioManager.setBinauralBeatsVolume(audioMixerVolumes.binauralBeats);
+        await audioManager.setBackgroundNoiseVolume(audioMixerVolumes.backgroundNoise);
+
+        console.log("[PlaybackScreen] Audio loaded successfully");
+      } catch (error) {
+        console.error("[PlaybackScreen] Failed to load audio:", error);
+      } finally {
+        setIsLoadingAudio(false);
+      }
+    };
+
+    loadAudio();
+
+    // Cleanup on unmount or session change
+    return () => {
+      audioManager.cleanup();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id]); // Only reload when session ID changes - audioManager is stable
+
+  // Sync audio manager state with app store
+  // Use refs to track last values and prevent infinite loops
+  const lastIsPlayingRef = useRef(audioManager.isPlaying);
+  const lastCurrentTimeRef = useRef(0);
+
+  useEffect(() => {
+    // Update playing state only when it actually changes
+    if (audioManager.isPlaying !== lastIsPlayingRef.current) {
+      lastIsPlayingRef.current = audioManager.isPlaying;
+      setIsPlaying(audioManager.isPlaying);
+    }
+
+    // Update time at most once per second to prevent render spam
+    const interval = setInterval(() => {
+      if (audioManager.isPlaying) {
+        const roundedTime = Math.floor(audioManager.currentTime);
+        const lastRoundedTime = Math.floor(lastCurrentTimeRef.current);
+        if (roundedTime !== lastRoundedTime) {
+          lastCurrentTimeRef.current = audioManager.currentTime;
+          setCurrentTime(audioManager.currentTime);
+        }
+      }
+    }, 1000); // Update every second
 
     return () => clearInterval(interval);
-  }, [isPlaying, session]); // Removed currentTime from dependencies to prevent interval restart
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioManager.isPlaying, setIsPlaying, setCurrentTime]); // Removed isPlaying and currentTime from deps to prevent loops
+
+  // Update volumes when they change
+  useEffect(() => {
+    const updateVolumes = async () => {
+      await Promise.all([
+        audioManager.setAffirmationsVolume(audioMixerVolumes.affirmations),
+        audioManager.setBinauralBeatsVolume(audioMixerVolumes.binauralBeats),
+        audioManager.setBackgroundNoiseVolume(audioMixerVolumes.backgroundNoise),
+      ]);
+    };
+    updateVolumes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioMixerVolumes.affirmations, audioMixerVolumes.binauralBeats, audioMixerVolumes.backgroundNoise]); // audioManager is stable
 
   if (!session) {
     return (
@@ -352,19 +488,34 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
     manifest: ["#9333EA", "#F59E0B"],
   };
 
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-    // TODO: Implement actual audio playback with ElevenLabs
+  const togglePlay = async () => {
+    if (isLoadingAudio) return;
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (isPlaying) {
+      await audioManager.pause();
+    } else {
+      await audioManager.play();
+    }
   };
 
-  const handleRestart = () => {
-    setCurrentTime(0);
-    setIsPlaying(true);
+  const handleCopyAffirmation = async (affirmation: string, index: number) => {
+    await Clipboard.setStringAsync(affirmation);
+    setCopiedIndex(index);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const handleRestart = async () => {
+    await audioManager.seek(0);
+    await audioManager.play();
   };
 
   const handleRegenerate = () => {
     // Navigate back to generation screen with same goal
-    navigation.navigate("Generation", { goal: session.goal as any });
+    const goal = session.goal as "sleep" | "focus" | "calm" | "manifest";
+    navigation.navigate("Generation", { goal });
   };
 
   const handleGoBack = () => {
@@ -426,31 +577,63 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
   };
 
   // Check if session is favorited - use the session from library if it exists
-  const sessionInLibrary = sessions.find((s) => s.id === sessionId);
+  // Memoize to prevent unnecessary recalculations on every render
+  const sessionInLibrary = useMemo(() => 
+    sessions.find((s) => s.id === sessionId),
+    [sessions, sessionId]
+  );
   const isFavorited = sessionInLibrary?.isFavorite ?? false;
 
-  console.log("[PlaybackScreen] Render - isFavorited:", isFavorited, "sessionInLibrary:", !!sessionInLibrary);
+  // Debug logging only when session state actually changes
+  useEffect(() => {
+    console.log("[PlaybackScreen] Render - isFavorited:", isFavorited, "sessionInLibrary:", !!sessionInLibrary);
+  }, [isFavorited, sessionInLibrary]);
 
   const progress = session ? (currentTime / session.lengthSec) * 100 : 0;
 
   return (
-    <LinearGradient colors={goalColors[session.goal]} style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
+      <LinearGradient 
+        colors={goalColors[session.goal]} 
+        style={{ 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0,
+          opacity: 0.98,
+        }}
+      >
+        {/* Subtle texture overlay */}
+        <View 
+          style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.02)',
+            opacity: 0.3,
+          }}
+        />
+      </LinearGradient>
       <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <View className="flex-1">
           {/* Header */}
-          <View className="flex-row items-center justify-between px-6 py-4">
+          <View className="flex-row items-center justify-between px-6 py-5">
             <Pressable onPress={handleGoBack} className="active:opacity-70">
-              <ChevronDown size={28} color="#FFF" />
+              <ChevronDown size={32} color="#FFF" strokeWidth={2} />
             </Pressable>
-            <View className="flex-row items-center gap-4">
+            <View className="flex-row items-center gap-5">
               <Pressable onPress={() => setShowAudioMixer(true)} className="active:opacity-70">
-                <Settings size={28} color="#FFF" />
+                <Settings size={32} color="#FFF" strokeWidth={2} />
               </Pressable>
               <Pressable onPress={toggleFavorite} className="active:opacity-70">
                 <Heart
-                  size={28}
+                  size={32}
                   color="#FFF"
                   fill={isFavorited ? "#FFF" : "transparent"}
+                  strokeWidth={2}
                 />
               </Pressable>
             </View>
@@ -528,31 +711,51 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
             <Animated.View entering={FadeInDown.delay(400).duration(600)} className="mb-8">
               <Pressable
                 onPress={() => setShowTranscript(!showTranscript)}
-                className="flex-row items-center justify-between mb-4 active:opacity-70"
+                className="flex-row items-center justify-between mb-4 active:opacity-70 bg-white/5 p-4 rounded-2xl border border-white/10"
               >
-                <Text className="text-white text-xl font-semibold">
-                  Affirmations ({session.affirmations.length})
-                </Text>
-                <Text className="text-white/70 text-sm">
-                  {showTranscript ? 'Hide' : 'Show'}
+                <View className="flex-row items-center">
+                  <Text className="text-white text-xl font-semibold">
+                    Affirmations ({session.affirmations.length})
+                  </Text>
+                  <ChevronDown 
+                    size={20} 
+                    color="#FFF" 
+                    style={{ 
+                      marginLeft: 8, 
+                      transform: [{ rotate: showTranscript ? '180deg' : '0deg' }] 
+                    }} 
+                  />
+                </View>
+                <Text className="text-white/70 text-sm font-medium">
+                  {showTranscript ? 'Hide' : 'Tap to view'}
                 </Text>
               </Pressable>
 
               {showTranscript && session.affirmations.map((affirmation, index) => (
-                <Animated.View
+                <Pressable
                   key={index}
-                  entering={FadeInDown.delay(index * 50).duration(400)}
-                  className="bg-white/10 backdrop-blur-sm p-4 rounded-2xl mb-3"
+                  onLongPress={() => handleCopyAffirmation(affirmation, index)}
+                  delayLongPress={500}
                 >
-                  <View className="flex-row">
-                    <Text className="text-white/50 text-sm font-bold mr-3">
-                      {(index + 1).toString().padStart(2, '0')}
-                    </Text>
-                    <Text className="text-white text-base leading-6 flex-1">
-                      {affirmation}
-                    </Text>
-                  </View>
-                </Animated.View>
+                  <Animated.View
+                    entering={FadeInDown.delay(index * 50).duration(400)}
+                    className="bg-white/10 backdrop-blur-sm p-4 rounded-2xl mb-3 border border-white/5"
+                  >
+                    <View className="flex-row items-start">
+                      <Text className="text-white/50 text-sm font-bold mr-3 mt-1">
+                        {(index + 1).toString().padStart(2, '0')}
+                      </Text>
+                      <Text className="text-white/95 text-base leading-6 flex-1">
+                        {affirmation}
+                      </Text>
+                      {copiedIndex === index ? (
+                        <Check size={18} color="#44B09E" style={{ marginLeft: 8, marginTop: 2 }} />
+                      ) : (
+                        <Copy size={18} color="#FFFFFF40" style={{ marginLeft: 8, marginTop: 2 }} />
+                      )}
+                    </View>
+                  </Animated.View>
+                </Pressable>
               ))}
             </Animated.View>
           </ScrollView>
@@ -565,7 +768,7 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
         onClose={() => setShowAudioMixer(false)}
         colors={goalColors[session.goal]}
       />
-    </LinearGradient>
+    </View>
   );
 };
 

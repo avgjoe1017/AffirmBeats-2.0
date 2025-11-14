@@ -82,18 +82,25 @@ const SettingsScreen = ({ navigation }: Props) => {
                 </View>
               </LinearGradient>
             ) : (
-              <View className="bg-white/10 rounded-2xl p-4 flex-row items-center justify-between border border-white/20">
-                <View className="flex-row items-center flex-1">
-                  <Crown size={24} color="#9E9EB0" />
-                  <View className="ml-3 flex-1">
-                    <Text className="text-white text-lg font-bold">Free Plan</Text>
-                    <Text className="text-gray-400 text-sm">
-                      {subscription?.customSessionsUsedThisMonth || 0} of {subscription?.customSessionsLimit || 1} custom sessions used
-                    </Text>
+              <LinearGradient
+                colors={["#8B7AB8", "#6B5A98"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                className="rounded-2xl p-[2px]"
+              >
+                <View className="bg-[#1A1A2E] rounded-2xl p-4 flex-row items-center justify-between">
+                  <View className="flex-row items-center flex-1">
+                    <Crown size={24} color="#F59E0B" />
+                    <View className="ml-3 flex-1">
+                      <Text className="text-white text-lg font-bold">Free Plan</Text>
+                      <Text className="text-gray-300 text-sm">
+                        {subscription?.customSessionsUsedThisMonth || 0} of {subscription?.customSessionsLimit || 1} custom sessions used
+                      </Text>
+                    </View>
                   </View>
+                  <ChevronRight size={20} color="#FFF" />
                 </View>
-                <ChevronRight size={20} color="#9E9EB0" />
-              </View>
+              </LinearGradient>
             )}
           </Pressable>
         </Animated.View>
@@ -140,10 +147,11 @@ const SettingsScreen = ({ navigation }: Props) => {
 
         {/* Duration */}
         <Animated.View entering={FadeIn.delay(300).duration(500)} className="mb-6">
-          <View className="flex-row items-center mb-3">
+          <View className="flex-row items-center mb-2">
             <Clock size={20} color="#8B7AB8" />
             <Text className="text-white text-lg font-semibold ml-2">Session Duration</Text>
           </View>
+          <Text className="text-gray-500 text-sm mb-3">Select duration</Text>
           <View className="flex-row gap-3">
             {durations.map((duration) => (
               <Pressable

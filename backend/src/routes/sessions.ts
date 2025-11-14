@@ -13,6 +13,7 @@ import {
 import { type AppType } from "../types";
 import { db } from "../db";
 import OpenAI from "openai";
+import { rateLimiters } from "../middleware/rateLimit";
 import { getOrCreateSubscription, SUBSCRIPTION_LIMITS } from "./subscription";
 
 const sessionsRouter = new Hono<AppType>();
@@ -94,12 +95,12 @@ const DEFAULT_SESSIONS = [
     title: "Evening Wind Down",
     goal: "sleep",
     affirmations: [
-      "I am ready to release the day",
-      "My body knows how to rest deeply",
-      "I deserve this peaceful moment",
-      "My mind is settling into stillness",
-      "I am safe and supported here",
-      "I trust my body to restore itself",
+      "I let my body soften and release the day.",
+      "My breath slows, and my whole system settles into safety.",
+      "I trust my body to move into deep, nourishing rest.",
+      "I release tension, effort, and pressure with every exhale.",
+      "I am safe to let go and drift into sleep.",
+      "My mind quiets, my body heals, and I sink into deep recovery.",
     ],
     voiceId: "neutral",
     pace: "slow",
@@ -107,18 +108,20 @@ const DEFAULT_SESSIONS = [
     lengthSec: 600,
     isFavorite: false,
     createdAt: new Date("2024-11-01T22:00:00Z").toISOString(),
+    binauralCategory: "delta",
+    binauralHz: "0.5-4",
   },
   {
     id: "default-focus-1",
     title: "Morning Momentum",
     goal: "focus",
     affirmations: [
-      "I am capable of great focus",
-      "My mind is clear and ready",
-      "I accomplish what matters today",
-      "My energy serves my purpose",
-      "I work with confidence and ease",
-      "I am exactly where I need to be",
+      "I start my day grounded, clear, and ready.",
+      "My mind wakes up with purpose and steady energy.",
+      "I move into focus with calm confidence.",
+      "I take meaningful action toward what matters most.",
+      "I trust my ability to create momentum today.",
+      "I choose clarity, discipline, and aligned effort.",
     ],
     voiceId: "confident",
     pace: "normal",
@@ -126,18 +129,20 @@ const DEFAULT_SESSIONS = [
     lengthSec: 300,
     isFavorite: false,
     createdAt: new Date("2024-11-02T08:00:00Z").toISOString(),
+    binauralCategory: "alpha",
+    binauralHz: "8-15",
   },
   {
     id: "default-calm-1",
     title: "Midday Reset",
     goal: "calm",
     affirmations: [
-      "I am at peace in this moment",
-      "My breath brings me back to calm",
-      "I release what I cannot control",
-      "My heart is open and at ease",
-      "I trust the flow of my life",
-      "I am held by something greater",
+      "I pause and come back to myself.",
+      "My breath resets my nervous system with every slow exhale.",
+      "I release what's pulling me out of balance.",
+      "I return to the moment with grounded awareness.",
+      "I feel calmer, softer, and more centered now.",
+      "I move forward with a clearer mind and a relaxed body.",
     ],
     voiceId: "whisper",
     pace: "slow",
@@ -145,18 +150,20 @@ const DEFAULT_SESSIONS = [
     lengthSec: 420,
     isFavorite: false,
     createdAt: new Date("2024-11-03T14:00:00Z").toISOString(),
+    binauralCategory: "alpha",
+    binauralHz: "8-12",
   },
   {
     id: "default-sleep-2",
     title: "Deep Rest",
     goal: "sleep",
     affirmations: [
-      "I am safe and ready to rest",
-      "My body melts into relaxation",
-      "I let go of all that no longer serves",
-      "My mind drifts into peaceful dreams",
-      "I deserve this healing sleep",
-      "I wake refreshed and renewed",
+      "I let my whole body drop into stillness.",
+      "My muscles unwind, and my mind slows down.",
+      "I enter deep, uninterrupted rest easily.",
+      "My body knows how to repair, restore, and rejuvenate.",
+      "I am drifting into peaceful, healing sleep.",
+      "I wake up renewed, restored, and replenished.",
     ],
     voiceId: "whisper",
     pace: "slow",
@@ -164,18 +171,20 @@ const DEFAULT_SESSIONS = [
     lengthSec: 900,
     isFavorite: false,
     createdAt: new Date("2024-11-04T23:00:00Z").toISOString(),
+    binauralCategory: "delta",
+    binauralHz: "0.5-4",
   },
   {
     id: "default-focus-2",
     title: "Power Hour",
     goal: "focus",
     affirmations: [
-      "I am focused and in control",
-      "My mind cuts through distractions easily",
-      "I bring my best to this work",
-      "My actions create meaningful results",
-      "I am present with each task",
-      "I finish what I start",
+      "I lock into laser-sharp focus with ease.",
+      "My mind is clear, organized, and fully present.",
+      "I move through this hour with intention and discipline.",
+      "I stay on task and in control of my attention.",
+      "My effort compounds — every minute counts.",
+      "I finish this session proud of my clarity and output.",
     ],
     voiceId: "confident",
     pace: "fast",
@@ -183,6 +192,8 @@ const DEFAULT_SESSIONS = [
     lengthSec: 180,
     isFavorite: false,
     createdAt: new Date("2024-11-05T10:00:00Z").toISOString(),
+    binauralCategory: "beta",
+    binauralHz: "14-20",
   },
   {
     id: "default-calm-2",
@@ -202,6 +213,8 @@ const DEFAULT_SESSIONS = [
     lengthSec: 480,
     isFavorite: false,
     createdAt: new Date("2024-11-06T16:00:00Z").toISOString(),
+    binauralCategory: "alpha",
+    binauralHz: "8-14",
   },
   {
     id: "default-manifest-1",
@@ -221,6 +234,8 @@ const DEFAULT_SESSIONS = [
     lengthSec: 360,
     isFavorite: false,
     createdAt: new Date("2024-11-07T09:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-8",
   },
   {
     id: "default-manifest-2",
@@ -240,6 +255,258 @@ const DEFAULT_SESSIONS = [
     lengthSec: 540,
     isFavorite: false,
     createdAt: new Date("2024-11-08T11:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-8",
+  },
+  {
+    id: "default-identity-1",
+    title: "Identity Priming: Step Into the Version of You Who Already Has It",
+    goal: "manifest",
+    affirmations: [
+      "Take a slow breath in. Let your shoulders soften. Feel your body settle into a state of ease.",
+      "As you breathe, notice how your mind becomes more spacious. This relaxed state matters.",
+      "When the nervous system settles, the brain becomes more open to new patterns, new possibilities, new identities.",
+      "Now bring to mind the version of you who already has what you're moving toward. Don't force an image. Just sense them.",
+      "Notice how they carry themselves. How they speak. How they move through a room. How they make decisions without hesitation.",
+      "This version of you exists in your brain's predictive maps — the internal models it uses to guide your behavior.",
+      "Right now, you're letting that map become clearer. Ask yourself softly: What is one quality this version of me embodies with ease?",
+      "Maybe it's confidence. Maybe calm clarity. Maybe self-belief. Let that quality fill your body, the same way warmth fills you when you step into the sun.",
+      "Your brain learns through repetition and experience. Each time you feel this quality on purpose, the neural pathways behind it strengthen.",
+      "Now bring your attention to one small action this version of you takes by default. Something simple. Something doable.",
+      "See yourself doing it not in the future, but as if it's already your norm. Take one more slow breath.",
+      "Let the identity settle into your body. You're not becoming someone new. You're remembering who you're capable of being. This is already inside you.",
+    ],
+    voiceId: "whisper",
+    pace: "slow",
+    noise: "rain",
+    lengthSec: 600,
+    isFavorite: false,
+    createdAt: new Date("2024-11-09T10:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-7",
+  },
+  {
+    id: "default-manifest-3",
+    title: "Future Memory: Encode Success as a Lived Experience",
+    goal: "manifest",
+    affirmations: [
+      "Get comfortable. Let your eyes rest or close. Feel the breath move easily in and out.",
+      "Your brain stores experiences as memories, but it also stores imagined experiences using the same neural machinery.",
+      "Today, you're creating a future memory — something your mind can use as a guide.",
+      "Bring your attention to a moment in the future where things have worked out the way you hope. Let the scene appear gently.",
+      "Where are you? What's around you? What does the air feel like on your skin? Take your time. Slow imagery creates stronger neural encoding.",
+      "Notice who's with you. Notice your posture. Notice the expression on your face — that calm, grounded sense of I did it.",
+      "Feel the emotion of this moment. Not forced. Just the natural feeling that rises when something meaningful aligns.",
+      "Your hippocampus tags memories with emotion. This emotional signal tells your brain: This matters. Keep it close.",
+      "Let that feeling expand in your chest. Warm. Steady. Real.",
+      "Now gently pair this future memory with a present-day anchor — maybe the feeling of your hands resting where they are or the sensation of your breath moving in your body.",
+      "This creates a bridge between who you are and who you're becoming. Take a final breath and let the memory settle inside you.",
+    ],
+    voiceId: "neutral",
+    pace: "slow",
+    noise: "brown",
+    lengthSec: 540,
+    isFavorite: false,
+    createdAt: new Date("2024-11-10T14:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-7",
+  },
+  {
+    id: "default-calm-3",
+    title: "Nervous System Reset for Receivership",
+    goal: "calm",
+    affirmations: [
+      "Sit in a position that feels easy. Drop your shoulders. Unclench your jaw.",
+      "Begin with a slow inhale and a long, gentle exhale. Longer exhales activate the parasympathetic nervous system — the part of you wired for calm, openness, and creativity.",
+      "Let your breath fall into a soft rhythm. Relaxed. Steady. Feel your spine lengthen. Feel your body grow heavier.",
+      "As your nervous system shifts into safety, your mind becomes more receptive. Ideas flow more freely. Possibilities feel closer. Receiving feels natural, not effortful.",
+      "Place one hand over your chest or stomach if that feels supportive. Feel the warmth of your own touch. Your body recognizes this as safety.",
+      "Say quietly to yourself, in your mind: I allow what supports me. I let good things come toward me. I am open to what aligns.",
+      "No force. Just openness. Let your breath slow one more degree.",
+      "Feel the subtle expansion across your ribs as you inhale. Feel the soft release as you exhale.",
+      "You are safe. You are steady. You are ready to receive.",
+    ],
+    voiceId: "whisper",
+    pace: "slow",
+    noise: "rain",
+    lengthSec: 480,
+    isFavorite: false,
+    createdAt: new Date("2024-11-11T09:00:00Z").toISOString(),
+    binauralCategory: "alpha",
+    binauralHz: "8-12",
+  },
+  {
+    id: "default-identity-2",
+    title: "Self-Image Recalibration: Rewrite Limiting Beliefs",
+    goal: "manifest",
+    affirmations: [
+      "Find stillness. Let your breath soften.",
+      "In this session, you'll gently explore a belief that feels limiting — and soften its hold. Not through forcing positivity, but through updating your internal model with new information.",
+      "Bring to mind a belief you carry about yourself. Something that feels tight or old or heavy. Maybe it begins with, I'm not someone who…",
+      "Notice the belief without judgment. Your brain learned this at some point, often to protect you. You're not fighting it. You're simply examining it with more clarity.",
+      "Ask yourself: Where did this belief come from? Whose voice does it sound like? Let the answer arise naturally.",
+      "Awareness is part of the reconsolidation process — the brain's way of updating old patterns.",
+      "Now gently introduce evidence that doesn't match the belief. Times you did show up differently. Moments you surprised yourself. Small wins you rarely give yourself credit for.",
+      "Your brain can't hold contradictory stories without adjusting something. Right now, it's adjusting for the better.",
+      "Now choose a new, more accurate belief one that feels possible. Not overly positive. Just true.",
+      "Say it softly in your mind: I'm learning to… I'm becoming someone who… I'm capable of…",
+      "Let it settle. Let it feel like a new doorway opening. Breathe once more. You've begun the recalibration.",
+    ],
+    voiceId: "neutral",
+    pace: "slow",
+    noise: "brown",
+    lengthSec: 600,
+    isFavorite: false,
+    createdAt: new Date("2024-11-12T15:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-7",
+  },
+  {
+    id: "default-manifest-4",
+    title: "Visualization for Goal Concreteness + Action Bias",
+    goal: "manifest",
+    affirmations: [
+      "Get comfortable and settle into your breath.",
+      "Your brain is more likely to act on what it can clearly picture. Today you'll make your goal concrete, specific, and deeply familiar.",
+      "Bring your attention to a goal you care about. Choose one that feels meaningful.",
+      "Now imagine the exact moment you take action toward it. Not the achievement — the action.",
+      "Where are you? What time of day is it? What are you wearing? What's in your hands? Let the scene sharpen just a little.",
+      "Concrete details activate networks responsible for planning and decision making.",
+      "Imagine yourself following through with ease. Your body moves almost automatically. Your mind feels clear.",
+      "Now add a simple implementation intention — a when X, I do Y plan.",
+      "For example: When I sit at my desk, I open the project. When I finish my coffee, I write for 10 minutes. When I feel resistance, I take one tiny step anyway.",
+      "Repeat your version quietly in your mind. Your brain is wiring this in as a natural response.",
+      "Take one final breath in and release.",
+    ],
+    voiceId: "confident",
+    pace: "normal",
+    noise: "none",
+    lengthSec: 420,
+    isFavorite: false,
+    createdAt: new Date("2024-11-13T11:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-7",
+  },
+  {
+    id: "default-calm-4",
+    title: "Gratitude Shift for Dopamine + Motivation Regulation",
+    goal: "calm",
+    affirmations: [
+      "Close your eyes gently. Let your breath relax.",
+      "Gratitude shifts your brain into an expanded, resourceful state. It's not about ignoring hardship — it's about widening your perspective so you can see more possibility.",
+      "Bring to mind one interaction from the past day that felt positive. Something small is enough.",
+      "Let the moment play softly in your mind. What happened? Who was there? How did it make you feel?",
+      "Now choose one internal trait you're grateful for — something about who you are. Maybe resilience. Maybe your way of caring. Maybe your curiosity.",
+      "Let that trait feel real in your body. Gratitude isn't just a thought — it creates measurable shifts in dopamine and emotional regulation.",
+      "Take a breath and notice: What did this make possible for me? Let the feeling expand gently.",
+      "Close with this quiet thought: I'm grateful for what's unfolding. Let that sense of steadiness rest in your chest.",
+    ],
+    voiceId: "neutral",
+    pace: "slow",
+    noise: "rain",
+    lengthSec: 360,
+    isFavorite: false,
+    createdAt: new Date("2024-11-14T16:00:00Z").toISOString(),
+    binauralCategory: "alpha",
+    binauralHz: "8-12",
+  },
+  {
+    id: "default-identity-3",
+    title: "Subconscious Priming Through Auditory Repetition",
+    goal: "manifest",
+    affirmations: [
+      "Sit comfortably. Let your breath slow to a natural rhythm.",
+      "Repetition is one of the most efficient ways the brain learns new information.",
+      "When you hear something calmly and consistently, your subconscious begins to accept it as familiar — and familiarity feels safe.",
+      "Allow your body to settle. Long exhales. Soft shoulders.",
+      "You'll now hear a set of identity-based statements. Let them drift in. No need to force belief — your brain will soften toward them over time.",
+      "I am becoming more grounded. I act on what matters to me. I am capable of change.",
+      "My future is shaped by the choices I make now. I am worthy of good things.",
+      "I move with clarity and confidence. I trust the path I'm building.",
+      "Let each phrase land gently. Your mind absorbs far more than it analyzes.",
+      "Take one last slow breath. Feel the statements settle into the space beneath your awareness.",
+    ],
+    voiceId: "whisper",
+    pace: "slow",
+    noise: "brown",
+    lengthSec: 480,
+    isFavorite: false,
+    createdAt: new Date("2024-11-15T10:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-7",
+  },
+  {
+    id: "default-focus-3",
+    title: "The Tiny Shift Session: Build Momentum Through Micro-Wins",
+    goal: "focus",
+    affirmations: [
+      "Relax your breath. Let your body soften.",
+      "Big goals can feel overwhelming. Your brain responds best to tiny, achievable steps — micro-wins that build confidence and forward motion.",
+      "Bring to mind one goal you've been wanting to move toward.",
+      "Now ask yourself: What is the smallest possible action I could take today?",
+      "Something that takes less than 60 seconds. Something you can't fail.",
+      "Picture yourself doing that tiny action with ease. See it. Feel it. Let your brain memorize the sensation of completion.",
+      "Now imagine the small hit of relief or satisfaction that follows. That emotional reward is what starts the dopamine loop of continued action.",
+      "Say quietly to yourself: Tiny steps become my identity. They add up. They move me forward.",
+      "Take a breath and let this micro-shift settle into your nervous system.",
+    ],
+    voiceId: "confident",
+    pace: "normal",
+    noise: "none",
+    lengthSec: 300,
+    isFavorite: false,
+    createdAt: new Date("2024-11-16T13:00:00Z").toISOString(),
+    binauralCategory: "beta",
+    binauralHz: "12-20",
+  },
+  {
+    id: "default-focus-4",
+    title: "State Change for Creativity + Problem Solving",
+    goal: "focus",
+    affirmations: [
+      "Settle comfortably. Let your breath fall into an easy rhythm.",
+      "Right now, you're shifting your mind into a more creative state — one where ideas connect more freely and solutions feel closer.",
+      "Begin with a gentle breathing pattern: Inhale for 1… Hold for 4… Exhale for 2. Repeat this pattern a few times.",
+      "This temporarily disrupts habitual thought loops and opens space for new connections.",
+      "Now let your mind drift lightly. Not fully focused. Not fully wandering. Just open.",
+      "This taps into the default mode network — the part of the brain involved in insight, imagination, and big-picture thinking.",
+      "Allow thoughts, images, or ideas to float through. No pressure to figure anything out.",
+      "Notice if a connection emerges… A new way of seeing something… A possibility you hadn't considered.",
+      "Let it be gentle. Let it be spacious. Take one more breath. And return slowly to presence.",
+    ],
+    voiceId: "neutral",
+    pace: "slow",
+    noise: "brown",
+    lengthSec: 420,
+    isFavorite: false,
+    createdAt: new Date("2024-11-17T11:00:00Z").toISOString(),
+    binauralCategory: "beta",
+    binauralHz: "12-20",
+  },
+  {
+    id: "default-healing-1",
+    title: "Embodied Worthiness: Rebuild Internal Safety",
+    goal: "calm",
+    affirmations: [
+      "Sit comfortably and place one hand on your chest or stomach.",
+      "Feel your breath move beneath your hand.",
+      "Worthiness is not a belief — it's a felt sense of safety. Today, you're helping your body remember that you are allowed to belong, to receive, and to take up space.",
+      "Notice the warmth of your hand. Notice the rise and fall of your breath. Your body reads this as comfort.",
+      "Say softly in your mind: I'm allowed to feel supported. I'm allowed to receive.",
+      "I am safe in who I am. I deserve good things that come my way.",
+      "Feel the statements warm your chest, like a small light expanding outward.",
+      "Your nervous system recognizes this warmth. It relaxes into it.",
+      "Take a slow breath in and a soft breath out.",
+      "You are enough. You are safe. You are worthy. Let that truth settle in your body.",
+    ],
+    voiceId: "whisper",
+    pace: "slow",
+    noise: "rain",
+    lengthSec: 480,
+    isFavorite: false,
+    createdAt: new Date("2024-11-18T14:00:00Z").toISOString(),
+    binauralCategory: "theta",
+    binauralHz: "4-7",
   },
 ];
 
@@ -403,7 +670,15 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
         console.log(`⛔ [Sessions] User ${user.id} has reached custom session limit`);
         return c.json(
           {
-            message: `You've reached your limit of ${limit} custom session${limit > 1 ? 's' : ''} per month. Upgrade to Pro for unlimited custom sessions.`
+            error: "SUBSCRIPTION_LIMIT_EXCEEDED",
+            code: "SUBSCRIPTION_LIMIT_EXCEEDED",
+            message: `You've reached your limit of ${limit} custom session${limit > 1 ? 's' : ''} per month. Upgrade to Pro for unlimited custom sessions.`,
+            details: {
+              limit,
+              used: userSubscription.customSessionsUsedThisMonth,
+              tier: userSubscription.tier,
+              upgradeUrl: "/subscription",
+            },
           },
           403
         );
@@ -424,7 +699,7 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
     beta: "focus",
     gamma: "manifest",
   };
-  const goal = providedGoal || categoryToGoalMap[binauralCategory];
+  const goal: "sleep" | "focus" | "calm" | "manifest" = providedGoal || categoryToGoalMap[binauralCategory] || "calm";
 
   // Use default preferences if user is not authenticated
   let voice = "neutral";
@@ -561,7 +836,11 @@ sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSc
   const user = c.get("user");
 
   if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
+    return c.json({ 
+      error: "UNAUTHORIZED",
+      code: "UNAUTHORIZED",
+      message: "Please sign in to access your sessions.",
+    }, 401);
   }
 
   const sessionId = c.req.param("id");
@@ -569,7 +848,11 @@ sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSc
 
   // Prevent modifying default sessions
   if (sessionId.startsWith("default-")) {
-    return c.json({ message: "Cannot modify default sessions" }, 403);
+    return c.json({ 
+      error: "FORBIDDEN",
+      code: "FORBIDDEN",
+      message: "Default sessions cannot be modified.",
+    }, 403);
   }
 
   console.log(`⭐ [Sessions] Toggling favorite for session: ${sessionId}, value: ${isFavorite}`);
@@ -580,7 +863,11 @@ sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSc
   });
 
   if (!session) {
-    return c.json({ message: "Session not found" }, 404);
+    return c.json({ 
+      error: "NOT_FOUND",
+      code: "NOT_FOUND",
+      message: "Session not found or you don't have permission to access it.",
+    }, 404);
   }
 
   // Update favorite status
@@ -599,7 +886,11 @@ sessionsRouter.delete("/:id", async (c) => {
   const user = c.get("user");
 
   if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
+    return c.json({ 
+      error: "UNAUTHORIZED",
+      code: "UNAUTHORIZED",
+      message: "Please sign in to access your sessions.",
+    }, 401);
   }
 
   const sessionId = c.req.param("id");
@@ -617,7 +908,11 @@ sessionsRouter.delete("/:id", async (c) => {
   });
 
   if (!session) {
-    return c.json({ message: "Session not found" }, 404);
+    return c.json({ 
+      error: "NOT_FOUND",
+      code: "NOT_FOUND",
+      message: "Session not found or you don't have permission to access it.",
+    }, 404);
   }
 
   await db.affirmationSession.delete({
@@ -634,7 +929,11 @@ sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), asy
   const user = c.get("user");
 
   if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
+    return c.json({ 
+      error: "UNAUTHORIZED",
+      code: "UNAUTHORIZED",
+      message: "Please sign in to access your sessions.",
+    }, 401);
   }
 
   const sessionId = c.req.param("id");
@@ -642,7 +941,11 @@ sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), asy
 
   // Prevent modifying default sessions
   if (sessionId.startsWith("default-")) {
-    return c.json({ message: "Cannot modify default sessions" }, 403);
+    return c.json({ 
+      error: "FORBIDDEN",
+      code: "FORBIDDEN",
+      message: "Default sessions cannot be modified.",
+    }, 403);
   }
 
   console.log(`✏️ [Sessions] Updating session: ${sessionId}`);
@@ -653,7 +956,11 @@ sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), asy
   });
 
   if (!session) {
-    return c.json({ message: "Session not found" }, 404);
+    return c.json({ 
+      error: "NOT_FOUND",
+      code: "NOT_FOUND",
+      message: "Session not found or you don't have permission to access it.",
+    }, 404);
   }
 
   // Build update data

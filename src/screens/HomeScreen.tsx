@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, Pressable, ScrollView, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Moon, Zap, Heart, Play, Sparkles, Plus } from "lucide-react-native";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import type { BottomTabScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
 import { api } from "@/lib/api";
@@ -17,15 +18,28 @@ const HomeScreen = ({ navigation }: Props) => {
   const setSessions = useAppStore((s) => s.setSessions);
   const userName = useAppStore((s) => s.userName);
   const [greeting, setGreeting] = useState("");
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const hasLoadedRef = useRef(false);
 
   const screenWidth = Dimensions.get("window").width;
   const cardWidth = screenWidth * 0.75;
 
   useEffect(() => {
+    // Only load once on mount to prevent infinite loops
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
+
     // Load preferences
     api
       .get<GetPreferencesResponse>("/api/preferences")
-      .then((prefs) => setPreferences({ ...prefs, duration: preferences.duration, affirmationSpacing: preferences.affirmationSpacing }))
+      .then((prefs) => {
+        setPreferences({ 
+          ...prefs, 
+          duration: preferences.duration, 
+          affirmationSpacing: preferences.affirmationSpacing 
+        });
+      })
       .catch((error) => {
         // Silently fail if user is not authenticated
         // They can still use the app with default preferences
@@ -42,7 +56,7 @@ const HomeScreen = ({ navigation }: Props) => {
         // For authenticated users: API returns all sessions from DB, so just use those
         // Filter out temp sessions that were successfully saved to server (they'll be in data.sessions)
         const tempSessionIds = new Set(data.sessions.map(s => s.id));
-        const existingCustomSessions = sessions.filter(s => 
+        const existingCustomSessions = sessionsRef.current.filter(s => 
           s.id.startsWith("temp-") && !tempSessionIds.has(s.id)
         );
         const mergedSessions = [...existingCustomSessions, ...data.sessions];
@@ -61,7 +75,8 @@ const HomeScreen = ({ navigation }: Props) => {
     if (hour < 12) setGreeting("Good morning");
     else if (hour < 18) setGreeting("Good afternoon");
     else setGreeting("Good evening");
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run once on mount
 
   const goals = [
     { id: "sleep", label: "Sleep", subtitle: "Rest deeply", icon: Moon, colors: ["#2D1B69", "#8B7AB8"], theme: "Rest & Recovery" },
@@ -164,8 +179,8 @@ const HomeScreen = ({ navigation }: Props) => {
           </Animated.View>
         )}
 
-        {/* Create Session Button */}
-        <Animated.View entering={FadeIn.delay(recentSessions.length > 0 ? 350 : 200).duration(500)} className="mb-6">
+        {/* Create Session Button - Elevated */}
+        <Animated.View entering={FadeIn.delay(recentSessions.length > 0 ? 350 : 200).duration(500)} className="mb-8">
           <Pressable
             onPress={() => navigation.navigate("CreateSession", {})}
             className="active:opacity-80"
@@ -176,14 +191,19 @@ const HomeScreen = ({ navigation }: Props) => {
               end={{ x: 1, y: 0 }}
               style={{
                 borderRadius: 20,
-                padding: 20,
+                padding: 22,
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
+                shadowColor: "#8B7AB8",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 8,
               }}
             >
-              <Plus size={24} color="#FFF" strokeWidth={2.5} />
-              <Text className="text-white text-lg font-bold ml-2">
+              <Plus size={26} color="#FFF" strokeWidth={2.5} />
+              <Text className="text-white text-xl font-bold ml-2">
                 Create Custom Session
               </Text>
             </LinearGradient>
@@ -191,8 +211,8 @@ const HomeScreen = ({ navigation }: Props) => {
         </Animated.View>
 
         {/* Choose Your Focus Section */}
-        <Animated.View entering={FadeIn.delay(recentSessions.length > 0 ? 400 : 200).duration(500)} className="mb-4">
-          <Text className="text-gray-400 text-xs uppercase tracking-wider mb-4">
+        <Animated.View entering={FadeIn.delay(recentSessions.length > 0 ? 400 : 200).duration(500)} className="mb-6">
+          <Text className="text-gray-400 text-xs uppercase tracking-wider">
             Choose Your Focus
           </Text>
         </Animated.View>
@@ -206,7 +226,10 @@ const HomeScreen = ({ navigation }: Props) => {
               className="mb-4"
             >
               <Pressable
-                onPress={() => navigation.navigate("Generation", { goal: goal.id as "sleep" | "focus" | "calm" | "manifest" })}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  navigation.navigate("Generation", { goal: goal.id as "sleep" | "focus" | "calm" | "manifest" });
+                }}
                 className="active:opacity-80"
               >
                 <LinearGradient
@@ -227,7 +250,11 @@ const HomeScreen = ({ navigation }: Props) => {
                     </View>
                     <View className="ml-4 flex-1">
                       <Text className="text-white text-2xl font-bold">{goal.label}</Text>
-                      <Text className="text-white/70 text-sm mt-1">{goal.subtitle}</Text>
+                      <View className="flex-row items-center mt-1 gap-2">
+                        <Text className="text-white/70 text-sm">{goal.subtitle}</Text>
+                        <Text className="text-white/50 text-xs">•</Text>
+                        <Text className="text-white/60 text-xs uppercase tracking-wider">{goal.theme}</Text>
+                      </View>
                     </View>
                   </View>
                   <View className="ml-4">

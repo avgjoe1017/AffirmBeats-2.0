@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Heart, Trash2, Play, Pencil } from "lucide-react-native";
@@ -19,23 +19,46 @@ const LibraryScreen = ({ navigation }: Props) => {
   const removeSession = useAppStore((s) => s.removeSession);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [togglingFavoriteId, setTogglingFavoriteId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     try {
       const data = await api.get<GetSessionsResponse>("/api/sessions");
 
       // For guest users: merge API sessions (defaults) with any custom sessions already in the store
       // For authenticated users: API returns all sessions from DB, so just use those
-      // Filter out temp sessions that were successfully saved to server (they'll be in data.sessions)
-      const tempSessionIds = new Set(data.sessions.map(s => s.id));
-      const existingCustomSessions = sessions.filter(s => 
-        s.id.startsWith("temp-") && !tempSessionIds.has(s.id)
+      // 
+      // Strategy:
+      // 1. Get all temp sessions from current store that aren't in API response (preserve unsaved local sessions)
+      // 2. Get all API sessions (defaults + saved custom sessions)
+      // 3. Merge them, avoiding duplicates
+      const apiSessionIds = new Set(data.sessions.map(s => s.id));
+      const currentTempSessions = sessionsRef.current.filter(s => 
+        s.id.startsWith("temp-") && !apiSessionIds.has(s.id)
       );
-      const mergedSessions = [...existingCustomSessions, ...data.sessions];
+      
+      // Create a map to avoid duplicates (prefer API version if both exist)
+      const sessionMap = new Map<string, typeof data.sessions[0]>();
+      
+      // First, add all temp sessions (local, unsaved)
+      currentTempSessions.forEach(session => {
+        sessionMap.set(session.id, session);
+      });
+      
+      // Then, add all API sessions (will overwrite temp sessions if they were saved)
+      data.sessions.forEach(session => {
+        sessionMap.set(session.id, session);
+      });
+      
+      const mergedSessions = Array.from(sessionMap.values());
+      
+      // Sort by creation date (newest first)
+      mergedSessions.sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
 
       setSessions(mergedSessions);
     } catch (error) {
@@ -44,20 +67,30 @@ const LibraryScreen = ({ navigation }: Props) => {
       if (!errorMessage.includes("401")) {
         console.error("Failed to load sessions:", error);
       }
+      // On error, preserve existing sessions (don't clear them)
+      if (sessionsRef.current.length > 0) {
+        console.log("[LibraryScreen] Preserving existing sessions due to API error");
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [setSessions]);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   const toggleFavorite = async (sessionId: string, isFavorite: boolean) => {
-    // For guest sessions (temp-*) or default sessions (default-*), just update locally
-    if (sessionId.startsWith("temp-") || sessionId.startsWith("default-")) {
-      updateSession(sessionId, { isFavorite: !isFavorite });
-      return;
-    }
-
-    // For authenticated users with saved sessions, update in backend
+    setTogglingFavoriteId(sessionId);
+    
     try {
+      // For guest sessions (temp-*) or default sessions (default-*), just update locally
+      if (sessionId.startsWith("temp-") || sessionId.startsWith("default-")) {
+        updateSession(sessionId, { isFavorite: !isFavorite });
+        return;
+      }
+
+      // For authenticated users with saved sessions, update in backend
       await api.patch(`/api/sessions/${sessionId}/favorite`, { isFavorite: !isFavorite });
       updateSession(sessionId, { isFavorite: !isFavorite });
     } catch (error) {
@@ -66,18 +99,22 @@ const LibraryScreen = ({ navigation }: Props) => {
       if (!errorMessage.includes("401")) {
         console.error("Failed to toggle favorite:", error);
       }
+    } finally {
+      setTogglingFavoriteId(null);
     }
   };
 
   const deleteSession = async (sessionId: string) => {
-    // For guest users (temp sessions), just remove locally without API call
-    if (sessionId.startsWith("temp-")) {
-      removeSession(sessionId);
-      return;
-    }
-
-    // For authenticated users, delete from backend
+    setDeletingSessionId(sessionId);
+    
     try {
+      // For guest users (temp sessions), just remove locally without API call
+      if (sessionId.startsWith("temp-")) {
+        removeSession(sessionId);
+        return;
+      }
+
+      // For authenticated users, delete from backend
       await api.delete(`/api/sessions/${sessionId}`);
       removeSession(sessionId);
     } catch (error) {
@@ -86,6 +123,8 @@ const LibraryScreen = ({ navigation }: Props) => {
       if (!errorMessage.includes("401")) {
         console.error("Failed to delete session:", error);
       }
+    } finally {
+      setDeletingSessionId(null);
     }
   };
 
@@ -126,13 +165,14 @@ const LibraryScreen = ({ navigation }: Props) => {
           </Text>
         </Animated.View>
 
-        {/* Filter Pills */}
+        {/* Filter Pills - Sticky */}
         {sessions.length > 0 && (
           <Animated.View entering={FadeIn.delay(200).duration(500)} className="mb-6">
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingRight: 24 }}
+              stickyHeaderIndices={[0]}
             >
               {filters.map((filter, index) => (
                 <Pressable
@@ -218,12 +258,12 @@ const LibraryScreen = ({ navigation }: Props) => {
                   }}
                 >
                   {/* Header Row */}
-                  <View className="flex-row items-start justify-between mb-3">
+                  <View className="flex-row items-start justify-between mb-2">
                     <View className="flex-1 pr-4">
                       <Text className="text-white text-lg font-bold" numberOfLines={1}>
                         {session.title}
                       </Text>
-                      <View className="flex-row items-center mt-1">
+                      <View className="flex-row items-center mt-1.5">
                         <Text className="text-white/70 text-sm">
                           {new Date(session.createdAt).toLocaleDateString()}
                         </Text>
@@ -249,7 +289,7 @@ const LibraryScreen = ({ navigation }: Props) => {
                   </View>
 
                   {/* Theme Label */}
-                  <View className="mb-3">
+                  <View className="mb-2">
                     <Text className="text-white/90 text-sm font-medium">
                       {goalThemes[session.goal] || "Affirmation Session"}
                     </Text>
@@ -263,30 +303,43 @@ const LibraryScreen = ({ navigation }: Props) => {
                         {session.affirmations?.length || 0} affirmations
                       </Text>
                     </View>
-                    <View className="flex-row gap-4 items-center">
+                    <View className="flex-row gap-5 items-center">
                       {!session.id.startsWith("default-") && (
                         <>
                           <Pressable onPress={(e) => {
                             e.stopPropagation();
                             navigation.navigate("CreateSession", { sessionId: session.id });
                           }}>
-                            <Pencil size={20} color="#FFF" />
+                            <Pencil size={24} color="#FFF" strokeWidth={2} />
                           </Pressable>
-                          <Pressable onPress={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(session.id, session.isFavorite);
-                          }}>
+                          <Pressable 
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(session.id, session.isFavorite);
+                            }}
+                            disabled={togglingFavoriteId === session.id}
+                          >
                             <Heart
-                              size={20}
+                              size={24}
                               color="#FFF"
                               fill={session.isFavorite ? "#FFF" : "transparent"}
+                              strokeWidth={2}
+                              opacity={togglingFavoriteId === session.id ? 0.5 : 1}
                             />
                           </Pressable>
-                          <Pressable onPress={(e) => {
-                            e.stopPropagation();
-                            deleteSession(session.id);
-                          }}>
-                            <Trash2 size={20} color="#FFF" />
+                          <Pressable 
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              deleteSession(session.id);
+                            }}
+                            disabled={deletingSessionId === session.id}
+                          >
+                            <Trash2 
+                              size={24} 
+                              color="#FFF" 
+                              strokeWidth={2}
+                              opacity={deletingSessionId === session.id ? 0.5 : 1}
+                            />
                           </Pressable>
                         </>
                       )}

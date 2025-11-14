@@ -17,7 +17,11 @@ preferencesRouter.get("/", async (c) => {
   const user = c.get("user");
 
   if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
+    return c.json({ 
+      error: "UNAUTHORIZED",
+      code: "UNAUTHORIZED",
+      message: "Please sign in to access your preferences.",
+    }, 401);
   }
 
   console.log(`📋 [Preferences] Getting preferences for user: ${user.id}`);
@@ -57,10 +61,14 @@ preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema),
   const user = c.get("user");
 
   if (!user) {
-    return c.json({ message: "Unauthorized" }, 401);
+    return c.json({ 
+      error: "UNAUTHORIZED",
+      code: "UNAUTHORIZED",
+      message: "Please sign in to access your preferences.",
+    }, 401);
   }
 
-  const updates = c.req.valid("json");
+  const updates: UpdatePreferencesRequest = c.req.valid("json");
   console.log(`📝 [Preferences] Updating preferences for user: ${user.id}`, updates);
 
   // Upsert preferences

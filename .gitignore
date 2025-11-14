@@ -39,3 +39,6 @@ android/
 
 # Expo log
 expo.log
+
+# TTS Cache
+backend/cache/

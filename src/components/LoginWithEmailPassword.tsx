@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, Text, TextInput, View, Keyboard, TouchableWithoutFeedback } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import { authClient } from "@/lib/authClient";
@@ -101,8 +101,9 @@ export default function LoginWithEmailPassword() {
   }
 
   return (
-    <KeyboardAwareScrollView>
-      <View className="w-full p-6 gap-4">
+    <KeyboardAwareScrollView keyboardShouldPersistTaps="handled">
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View className="w-full p-6 gap-4">
         <Text className="text-2xl font-bold text-center mb-2">
           {isSignUp ? "Create Account" : "Sign In"}
         </Text>
@@ -118,6 +119,9 @@ export default function LoginWithEmailPassword() {
               className="border border-gray-300 rounded-lg p-4 bg-white"
               autoCapitalize="words"
               editable={!isLoading}
+              returnKeyType="next"
+              onSubmitEditing={Keyboard.dismiss}
+              blurOnSubmit={true}
             />
           </View>
         )}
@@ -133,6 +137,9 @@ export default function LoginWithEmailPassword() {
             autoCapitalize="none"
             className="border border-gray-300 rounded-lg p-4 bg-white"
             editable={!isLoading}
+            returnKeyType="next"
+            onSubmitEditing={Keyboard.dismiss}
+            blurOnSubmit={true}
           />
         </View>
 
@@ -146,6 +153,9 @@ export default function LoginWithEmailPassword() {
             secureTextEntry
             className="border border-gray-300 rounded-lg p-4 bg-white"
             editable={!isLoading}
+            returnKeyType="done"
+            onSubmitEditing={Keyboard.dismiss}
+            blurOnSubmit={true}
           />
         </View>
 
@@ -168,7 +178,8 @@ export default function LoginWithEmailPassword() {
             {isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
           </Text>
         </Pressable>
-      </View>
+        </View>
+      </TouchableWithoutFeedback>
     </KeyboardAwareScrollView>
   );
 }

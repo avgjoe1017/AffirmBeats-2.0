@@ -60,7 +60,10 @@ export const generateSessionRequestSchema = z.object({
   goal: z.enum(["sleep", "focus", "calm", "manifest"]),
   binauralCategory: z.enum(["delta", "theta", "alpha", "beta", "gamma"]).optional(),
   binauralHz: z.string().optional(),
-  customPrompt: z.string().optional(),
+  customPrompt: z.string()
+    .max(500, "Custom prompt must be less than 500 characters")
+    .trim()
+    .optional(),
 });
 export type GenerateSessionRequest = z.infer<typeof generateSessionRequestSchema>;
 export const generateSessionResponseSchema = z.object({
@@ -119,10 +122,20 @@ export type GenerateSessionAudioRequest = z.infer<typeof generateSessionAudioReq
 
 // POST /api/sessions/create
 export const createCustomSessionRequestSchema = z.object({
-  title: z.string().min(1).max(50),
+  title: z.string()
+    .min(1, "Title must be at least 1 character")
+    .max(50, "Title must be less than 50 characters")
+    .trim(),
   binauralCategory: z.enum(["delta", "theta", "alpha", "beta", "gamma"]),
-  binauralHz: z.string(),
-  affirmations: z.array(z.string()).min(1),
+  binauralHz: z.string().min(1, "Binaural frequency is required"),
+  affirmations: z.array(
+    z.string()
+      .min(3, "Each affirmation must be at least 3 characters")
+      .max(200, "Each affirmation must be less than 200 characters")
+      .trim()
+  )
+    .min(1, "At least one affirmation is required")
+    .max(20, "Maximum 20 affirmations allowed"),
   goal: z.enum(["sleep", "focus", "calm", "manifest"]).optional(), // Inferred from category if not provided
 });
 export type CreateCustomSessionRequest = z.infer<typeof createCustomSessionRequestSchema>;
@@ -142,10 +155,22 @@ export type CreateCustomSessionResponse = z.infer<typeof createCustomSessionResp
 
 // PATCH /api/sessions/:id
 export const updateSessionRequestSchema = z.object({
-  title: z.string().min(1).max(50).optional(),
+  title: z.string()
+    .min(1, "Title must be at least 1 character")
+    .max(50, "Title must be less than 50 characters")
+    .trim()
+    .optional(),
   binauralCategory: z.enum(["delta", "theta", "alpha", "beta", "gamma"]).optional(),
-  binauralHz: z.string().optional(),
-  affirmations: z.array(z.string()).min(1).optional(),
+  binauralHz: z.string().min(1, "Binaural frequency is required").optional(),
+  affirmations: z.array(
+    z.string()
+      .min(3, "Each affirmation must be at least 3 characters")
+      .max(200, "Each affirmation must be less than 200 characters")
+      .trim()
+  )
+    .min(1, "At least one affirmation is required")
+    .max(20, "Maximum 20 affirmations allowed")
+    .optional(),
 });
 export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
 export const updateSessionResponseSchema = z.object({

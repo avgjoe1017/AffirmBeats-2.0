@@ -2,8 +2,13 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { type AppType } from "../types";
-import { stream } from "hono/streaming";
 import { rateLimiters } from "../middleware/rateLimit";
+import {
+  generateCacheKey,
+  hasCachedAudio,
+  getCachedAudio,
+  saveCachedAudio,
+} from "../utils/ttsCache";
 
 const ttsRouter = new Hono<AppType>();
 
@@ -30,7 +35,11 @@ const generateTTSRequestSchema = z.object({
  */
 ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequestSchema), async (c) => {
   if (!ELEVENLABS_API_KEY) {
-    return c.json({ message: "ElevenLabs API key not configured" }, 500);
+    return c.json({ 
+      error: "TTS_ERROR",
+      code: "TTS_ERROR",
+      message: "Text-to-speech service is temporarily unavailable. Please try again later.",
+    }, 503);
   }
 
   const { text, voiceType } = c.req.valid("json");
@@ -59,7 +68,12 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
     if (!response.ok) {
       const errorText = await response.text();
       console.error("❌ [TTS] ElevenLabs API error:", errorText);
-      return c.json({ message: "Failed to generate audio" }, 500);
+      return c.json({ 
+        error: "TTS_ERROR",
+        code: "TTS_ERROR",
+        message: "Failed to generate audio. Please try again.",
+        details: { provider: "ElevenLabs", status: response.status },
+      }, 500);
     }
 
     // Stream the audio response
@@ -75,7 +89,11 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
     return c.body(audioBuffer);
   } catch (error) {
     console.error("❌ [TTS] Error generating audio:", error);
-    return c.json({ message: "Internal server error" }, 500);
+    return c.json({ 
+      error: "INTERNAL_ERROR",
+      code: "INTERNAL_ERROR",
+      message: "An unexpected error occurred while generating audio. Please try again.",
+    }, 500);
   }
 });
 
@@ -92,25 +110,47 @@ ttsRouter.post(
       affirmations: z.array(z.string()),
       voiceType: z.enum(["neutral", "confident", "whisper"]),
       pace: z.enum(["slow", "normal", "fast"]),
+      affirmationSpacing: z.number().min(0).max(60).optional(), // Seconds between affirmations
     })
   ),
   async (c) => {
     if (!ELEVENLABS_API_KEY) {
-      return c.json({ message: "ElevenLabs API key not configured" }, 500);
+      return c.json({ 
+        error: "TTS_ERROR",
+        code: "TTS_ERROR",
+        message: "Text-to-speech service is temporarily unavailable. Please try again later.",
+      }, 503);
     }
 
-    const { affirmations, voiceType, pace } = c.req.valid("json");
+    const { affirmations, voiceType, pace, affirmationSpacing = 8 } = c.req.valid("json");
     const voiceId = VOICE_IDS[voiceType];
 
-    console.log(`🎵 [TTS] Generating session audio with ${affirmations.length} affirmations`);
+    // Generate cache key based on content
+    const cacheKey = generateCacheKey(affirmations, voiceType, pace, affirmationSpacing);
 
-    // Combine all affirmations with pauses based on pace
-    const pauseMarkers = {
-      slow: "... ... ...",
-      normal: "... ...",
-      fast: "...",
-    };
-    const combinedText = affirmations.join(` ${pauseMarkers[pace]} `);
+    // Check cache first (database-backed, shared across all users)
+    if (await hasCachedAudio(cacheKey)) {
+      const cachedAudio = await getCachedAudio(cacheKey);
+      if (cachedAudio) {
+        console.log(`💾 [TTS] Using cached audio for session (${affirmations.length} affirmations) - shared across all users`);
+        c.header("Content-Type", "audio/mpeg");
+        c.header("Content-Length", cachedAudio.length.toString());
+        c.header("X-Cache", "HIT");
+        return c.body(cachedAudio);
+      }
+    }
+
+    console.log(`🎵 [TTS] Generating NEW session audio with ${affirmations.length} affirmations, spacing: ${affirmationSpacing}s`);
+
+    // Combine all affirmations with SSML break tags for actual silence
+    // ElevenLabs supports SSML, so we can use <break> tags for precise timing
+    // Wrap in <speak> tags for SSML support
+    const breakTag = `<break time="${affirmationSpacing}s"/>`;
+    const affirmationsWithBreaks = affirmations.map((aff, index) => {
+      // Add break after each affirmation except the last one
+      return index < affirmations.length - 1 ? `${aff}${breakTag}` : aff;
+    }).join(" ");
+    const combinedText = `<speak>${affirmationsWithBreaks}</speak>`;
 
     try {
       // Call ElevenLabs API
@@ -134,7 +174,12 @@ ttsRouter.post(
       if (!response.ok) {
         const errorText = await response.text();
         console.error("❌ [TTS] ElevenLabs API error:", errorText);
-        return c.json({ message: "Failed to generate audio" }, 500);
+        return c.json({ 
+          error: "TTS_ERROR",
+          code: "TTS_ERROR",
+          message: "Failed to generate session audio. Please try again.",
+          details: { provider: "ElevenLabs", status: response.status },
+        }, 500);
       }
 
       console.log("✅ [TTS] Session audio generated successfully");
@@ -142,14 +187,22 @@ ttsRouter.post(
       // Convert ReadableStream to buffer
       const audioBuffer = await response.arrayBuffer();
 
+      // Save to cache for future use (shared across all users)
+      await saveCachedAudio(cacheKey, audioBuffer, affirmations, voiceType, pace, affirmationSpacing);
+
       // Set appropriate headers for audio streaming
       c.header("Content-Type", "audio/mpeg");
       c.header("Content-Length", audioBuffer.byteLength.toString());
+      c.header("X-Cache", "MISS");
 
       return c.body(audioBuffer);
     } catch (error) {
       console.error("❌ [TTS] Error generating session audio:", error);
-      return c.json({ message: "Internal server error" }, 500);
+      return c.json({ 
+        error: "INTERNAL_ERROR",
+        code: "INTERNAL_ERROR",
+        message: "An unexpected error occurred while generating session audio. Please try again.",
+      }, 500);
     }
   }
 );

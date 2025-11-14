@@ -23,7 +23,8 @@ const store: RateLimitStore = {};
 setInterval(() => {
   const now = Date.now();
   Object.keys(store).forEach((key) => {
-    if (store[key].resetAt < now) {
+    const record = store[key];
+    if (record && record.resetAt < now) {
       delete store[key];
     }
   });
@@ -78,11 +79,11 @@ export function rateLimit(options: {
       };
     }
 
-    // Add rate limit headers
-    const record = store[key];
+    // Add rate limit headers (get fresh record after potential update)
+    const currentRecord = store[key]!;
     c.header("X-RateLimit-Limit", limit.toString());
-    c.header("X-RateLimit-Remaining", Math.max(0, limit - record.count).toString());
-    c.header("X-RateLimit-Reset", Math.ceil(record.resetAt / 1000).toString());
+    c.header("X-RateLimit-Remaining", Math.max(0, limit - currentRecord.count).toString());
+    c.header("X-RateLimit-Reset", Math.ceil(currentRecord.resetAt / 1000).toString());
 
     await next();
   };

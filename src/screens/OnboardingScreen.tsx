@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable } from "react-native";
+import { View, Text, TextInput, Pressable, Keyboard, TouchableWithoutFeedback } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { Sparkles, Moon, Zap, Heart, Check } from "lucide-react-native";
@@ -63,7 +63,8 @@ const OnboardingScreen = ({ navigation }: Props) => {
         </Pressable>
       </View>
 
-      <View className="flex-1 justify-center px-8 pb-20">
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View className="flex-1 justify-center px-8 pb-20">
         <Animated.View entering={FadeIn.duration(800)} className="items-center mb-12">
           <Sparkles size={48} color="#8B7AB8" strokeWidth={1.5} />
           <Text className="text-white text-4xl font-bold mt-6 text-center">
@@ -77,12 +78,15 @@ const OnboardingScreen = ({ navigation }: Props) => {
         {/* Step 1: Name Input */}
         {step === 1 && (
           <Animated.View entering={FadeInDown.delay(300).duration(600)} className="mb-8">
-            <View className="flex-row items-center justify-between mb-3">
+            <View className="flex-row items-center justify-between mb-2">
               <Text className="text-white text-lg font-semibold">What should we call you?</Text>
-              <View className="bg-white/10 px-2 py-1 rounded-full">
-                <Text className="text-gray-400 text-xs">1 of 3</Text>
+              <View className="flex-row gap-1">
+                <View className="w-2 h-2 rounded-full bg-white/30" />
+                <View className="w-2 h-2 rounded-full bg-white/10" />
+                <View className="w-2 h-2 rounded-full bg-white/10" />
               </View>
             </View>
+            <Text className="text-gray-500 text-sm mb-4">Used to personalize your sessions</Text>
             <View className="relative">
               <TextInput
                 value={name}
@@ -93,6 +97,9 @@ const OnboardingScreen = ({ navigation }: Props) => {
                 autoCapitalize="words"
                 autoFocus
                 maxLength={20}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+                blurOnSubmit={true}
               />
               {isNameValid && (
                 <View className="absolute right-4 top-4">
@@ -111,8 +118,10 @@ const OnboardingScreen = ({ navigation }: Props) => {
           <Animated.View entering={FadeInDown.delay(300).duration(600)}>
             <View className="flex-row items-center justify-between mb-4">
               <Text className="text-white text-lg font-semibold">What&apos;s your focus?</Text>
-              <View className="bg-white/10 px-2 py-1 rounded-full">
-                <Text className="text-gray-400 text-xs">2 of 3</Text>
+              <View className="flex-row gap-1">
+                <View className="w-2 h-2 rounded-full bg-white/10" />
+                <View className="w-2 h-2 rounded-full bg-white/30" />
+                <View className="w-2 h-2 rounded-full bg-white/10" />
               </View>
             </View>
             <Text className="text-gray-400 text-sm mb-4">
@@ -166,8 +175,10 @@ const OnboardingScreen = ({ navigation }: Props) => {
           <Animated.View entering={FadeInDown.delay(300).duration(600)} className="mb-8">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-white text-lg font-semibold">What do you want to work on?</Text>
-              <View className="bg-white/10 px-2 py-1 rounded-full">
-                <Text className="text-gray-400 text-xs">3 of 3</Text>
+              <View className="flex-row gap-1">
+                <View className="w-2 h-2 rounded-full bg-white/10" />
+                <View className="w-2 h-2 rounded-full bg-white/10" />
+                <View className="w-2 h-2 rounded-full bg-white/30" />
               </View>
             </View>
             <Text className="text-gray-400 text-sm mb-4">
@@ -185,6 +196,8 @@ const OnboardingScreen = ({ navigation }: Props) => {
                 autoFocus
                 maxLength={200}
                 style={{ minHeight: 100, textAlignVertical: "top" }}
+                returnKeyType="done"
+                blurOnSubmit={true}
               />
             </View>
             <Text className="text-gray-500 text-sm mt-2">
@@ -200,7 +213,8 @@ const OnboardingScreen = ({ navigation }: Props) => {
             </View>
           </Animated.View>
         )}
-      </View>
+        </View>
+      </TouchableWithoutFeedback>
 
       {/* Continue Button */}
       <View className="absolute bottom-0 left-0 right-0 px-8 pb-10">

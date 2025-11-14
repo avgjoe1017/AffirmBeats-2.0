@@ -1,12 +1,13 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Keyboard, TouchableWithoutFeedback } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowLeft, Sparkles, Pencil, Crown, Plus, X } from "lucide-react-native";
+import { ArrowLeft, Sparkles, Crown, Plus, X, BookOpen } from "lucide-react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import type { RootStackScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
 import { api } from "@/lib/api";
-import type { CreateCustomSessionResponse, UpdateSessionResponse, GenerateSessionResponse, GetSubscriptionResponse } from "@/shared/contracts";
+import type { CreateCustomSessionResponse, UpdateSessionResponse, GenerateSessionResponse } from "@/shared/contracts";
+import AffirmationLibraryModal from "@/components/AffirmationLibraryModal";
 
 type Props = RootStackScreenProps<"CreateSession">;
 
@@ -42,6 +43,7 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showManualEdit, setShowManualEdit] = useState(!!existingSession);
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
 
   const { setCurrentSession, addSession, updateSession } = useAppStore();
 
@@ -85,7 +87,11 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
   };
 
   const handleAddAffirmation = () => {
-    setCustomAffirmations([...customAffirmations, ""]);
+    if (customAffirmations.length < 20) {
+      setCustomAffirmations([...customAffirmations, ""]);
+    } else {
+      setErrorMessage("Maximum 20 affirmations allowed per session");
+    }
   };
 
   const handleUpdateAffirmation = (index: number, text: string) => {
@@ -99,10 +105,24 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
     setCustomAffirmations(updated);
   };
 
+  const handleSelectFromLibrary = (affirmations: string[]) => {
+    // Add selected affirmations, but don't exceed 20 total
+    const currentCount = customAffirmations.length;
+    const remainingSlots = 20 - currentCount;
+    const toAdd = affirmations.slice(0, remainingSlots);
+    setCustomAffirmations([...customAffirmations, ...toAdd]);
+    if (affirmations.length > remainingSlots) {
+      setErrorMessage(`Added ${remainingSlots} affirmations. Maximum 20 affirmations per session.`);
+    }
+  };
+
+  const validAffirmations = customAffirmations.filter((a) => a.trim().length >= 3);
   const canProceed =
     sessionName.trim().length > 0 &&
+    sessionName.trim().length <= 50 &&
     selectedCategory !== null &&
-    customAffirmations.some((a) => a.trim().length > 0);
+    validAffirmations.length > 0 &&
+    validAffirmations.length <= 20;
 
   const handleCreateSession = async () => {
     if (!canProceed || !selectedCategory) return;
@@ -117,7 +137,7 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
         return;
       }
 
-      const validAffirmations = customAffirmations.filter((a) => a.trim().length > 0);
+      const validAffirmations = customAffirmations.filter((a) => a.trim().length >= 3);
 
       // If editing an existing session
       if (existingSession && sessionId) {
@@ -216,7 +236,8 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
         <View className="w-8" />
       </View>
 
-      <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {!showManualEdit ? (
           /* AI-First Input */
           <Animated.View entering={FadeIn.duration(600)}>
@@ -232,16 +253,23 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
             <View className="mb-6">
               <TextInput
                 value={userIntent}
-                onChangeText={setUserIntent}
+                onChangeText={(text) => {
+                  if (text.length <= 500) {
+                    setUserIntent(text);
+                  }
+                }}
                 placeholder="E.g., Help me sleep better, boost my confidence, reduce anxiety..."
                 placeholderTextColor="#666"
                 multiline
                 numberOfLines={4}
                 className="bg-white/10 rounded-xl p-4 text-white text-base border border-white/20"
                 style={{ minHeight: 120, textAlignVertical: "top" }}
+                maxLength={500}
+                returnKeyType="done"
+                blurOnSubmit={true}
               />
-              <Text className="text-gray-500 text-xs mt-2 text-right">
-                {userIntent.length}/200
+              <Text className={`text-xs mt-2 text-right ${userIntent.length > 450 ? "text-red-400" : "text-gray-500"}`}>
+                {userIntent.length}/500
               </Text>
             </View>
 
@@ -328,6 +356,9 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
                 placeholderTextColor="#666"
                 className="bg-white/10 rounded-xl px-4 py-3 text-white text-base border border-white/20"
                 maxLength={50}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+                blurOnSubmit={true}
               />
               <Text className="text-gray-500 text-xs mt-1 text-right">
                 {sessionName.length}/50
@@ -366,51 +397,96 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
 
             {/* Affirmations */}
             <View className="mb-6">
-              <Text className="text-gray-400 text-sm mb-3">Affirmations</Text>
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-gray-400 text-sm">Affirmations</Text>
+                <Text className="text-gray-500 text-xs">
+                  {customAffirmations.length}/20
+                </Text>
+              </View>
               {customAffirmations.length > 0 ? (
                 customAffirmations.map((affirmation, index) => (
-                  <View key={index} className="mb-3 flex-row items-center">
-                    <TextInput
-                      value={affirmation}
-                      onChangeText={(text) => handleUpdateAffirmation(index, text)}
-                      placeholder={`Affirmation ${index + 1}`}
-                      placeholderTextColor="#666"
-                      className="flex-1 bg-white/10 rounded-xl px-4 py-3 text-white text-base border border-white/20"
-                      multiline
-                    />
-                    {customAffirmations.length > 1 && (
-                      <Pressable
-                        onPress={() => handleRemoveAffirmation(index)}
-                        className="ml-2 p-2 active:opacity-80"
-                      >
-                        <X size={20} color="#EF4444" />
-                      </Pressable>
-                    )}
+                  <View key={index} className="mb-3">
+                    <View className="flex-row items-center">
+                      <TextInput
+                        value={affirmation}
+                        onChangeText={(text) => {
+                          if (text.length <= 200) {
+                            handleUpdateAffirmation(index, text);
+                          }
+                        }}
+                        placeholder={`Affirmation ${index + 1}`}
+                        placeholderTextColor="#666"
+                        returnKeyType="done"
+                        onSubmitEditing={Keyboard.dismiss}
+                        blurOnSubmit={true}
+                        className="flex-1 bg-white/10 rounded-xl px-4 py-3 text-white text-base border border-white/20"
+                        multiline
+                        maxLength={200}
+                      />
+                      {customAffirmations.length > 1 && (
+                        <Pressable
+                          onPress={() => handleRemoveAffirmation(index)}
+                          className="ml-2 p-2 active:opacity-80"
+                        >
+                          <X size={20} color="#EF4444" />
+                        </Pressable>
+                      )}
+                    </View>
+                    <Text className={`text-xs mt-1 text-right ${affirmation.length > 180 ? "text-red-400" : "text-gray-500"}`}>
+                      {affirmation.length}/200
+                    </Text>
                   </View>
                 ))
               ) : (
                 <View className="bg-white/5 rounded-xl p-6 border border-dashed border-white/20 mb-3">
                   <Text className="text-gray-400 text-center text-sm">
-                    No affirmations yet. Click below to add your first one.
+                    No affirmations yet. Select from library or write your own.
                   </Text>
                 </View>
               )}
 
-              <Pressable
-                onPress={handleAddAffirmation}
-                className="active:opacity-80 mt-2"
-              >
-                <View className="flex-row items-center justify-center py-3 rounded-xl border border-dashed border-white/30">
-                  <Plus size={18} color="#9333EA" />
-                  <Text className="text-purple-400 font-semibold ml-2">Add Affirmation</Text>
-                </View>
-              </Pressable>
+              <View className="flex-row gap-3 mt-2">
+                <Pressable
+                  onPress={() => setShowLibraryModal(true)}
+                  disabled={customAffirmations.length >= 20}
+                  className={`flex-1 active:opacity-80 ${customAffirmations.length >= 20 ? "opacity-50" : ""}`}
+                >
+                  <View className="flex-row items-center justify-center py-3 rounded-xl border border-white/30 bg-white/5">
+                    <BookOpen size={18} color="#9333EA" />
+                    <Text className="text-purple-400 font-semibold ml-2">
+                      Library
+                    </Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  onPress={handleAddAffirmation}
+                  disabled={customAffirmations.length >= 20}
+                  className={`flex-1 active:opacity-80 ${customAffirmations.length >= 20 ? "opacity-50" : ""}`}
+                >
+                  <View className="flex-row items-center justify-center py-3 rounded-xl border border-dashed border-white/30">
+                    <Plus size={18} color="#9333EA" />
+                    <Text className="text-purple-400 font-semibold ml-2">
+                      {customAffirmations.length >= 20 ? "Max" : "Write"}
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
             </View>
 
             <View className="h-40" />
           </Animated.View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+
+      {/* Affirmation Library Modal */}
+      <AffirmationLibraryModal
+        visible={showLibraryModal}
+        onClose={() => setShowLibraryModal(false)}
+        onSelect={handleSelectFromLibrary}
+        selectedCategoryId={selectedCategory || undefined}
+        existingAffirmations={customAffirmations}
+      />
 
       {/* Create Button (only show in manual edit mode) */}
       {showManualEdit && (

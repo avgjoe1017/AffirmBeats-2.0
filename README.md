@@ -234,7 +234,7 @@ Affirmation Beats is an AI-powered wellness app that generates personalized affi
 ## Tech Stack
 
 ### Frontend
-- **Expo SDK 53** with React Native 0.76.7
+- **Expo SDK 54** with React Native 0.81.5
 - **React Navigation 7** for stack and tab navigation
 - **NativeWind (Tailwind CSS)** for styling
 - **Lucide React Native** for icons

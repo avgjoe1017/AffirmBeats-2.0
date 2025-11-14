@@ -16,6 +16,7 @@ const GenerationScreen = ({ navigation, route }: Props) => {
   const [session, setSession] = useState<GenerateSessionResponse | null>(null);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const addSession = useAppStore((s) => s.addSession);
+  const userName = useAppStore((s) => s.userName);
 
   const pulseValue = useSharedValue(1);
 
@@ -34,65 +35,6 @@ const GenerationScreen = ({ navigation, route }: Props) => {
     transform: [{ scale: pulseValue.value }],
   }));
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    
-    const runGeneration = async () => {
-      try {
-        setStatus("generating");
-        const response = await api.post<GenerateSessionResponse>("/api/sessions/generate", {
-          goal,
-          customPrompt
-        });
-        setSession(response);
-        setCurrentSession(response);
-
-        // Add to library
-        console.log("[GenerationScreen] Adding session to library:", response.sessionId);
-        addSession({
-          id: response.sessionId,
-          title: response.title,
-          goal: response.goal,
-          affirmations: response.affirmations,
-          voiceId: response.voiceId,
-          pace: response.pace,
-          noise: response.noise,
-          lengthSec: response.lengthSec,
-          isFavorite: false,
-          createdAt: new Date().toISOString(),
-          binauralCategory: response.binauralCategory,
-          binauralHz: response.binauralHz,
-        });
-        console.log("[GenerationScreen] Session added to library");
-
-        // Verify it was added
-        setTimeout(() => {
-          const currentSessions = useAppStore.getState().sessions;
-          console.log("[GenerationScreen] Sessions in store after add:", currentSessions.length, "IDs:", currentSessions.map(s => s.id).slice(0, 3));
-        }, 100);
-
-        setStatus("ready");
-
-        // Auto-navigate to playback after 1 second
-        timeoutId = setTimeout(() => {
-          navigation.replace("Playback", { sessionId: response.sessionId });
-        }, 1000);
-      } catch (error) {
-        console.error("Failed to generate session:", error);
-        setStatus("error");
-      }
-    };
-
-    runGeneration();
-
-    // Cleanup timeout if component unmounts
-    return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
-  }, []);
-
   const generateSession = async () => {
     try {
       setStatus("generating");
@@ -100,6 +42,7 @@ const GenerationScreen = ({ navigation, route }: Props) => {
         goal,
         customPrompt
       });
+
       setSession(response);
       setCurrentSession(response);
 
@@ -130,14 +73,40 @@ const GenerationScreen = ({ navigation, route }: Props) => {
       setStatus("ready");
 
       // Auto-navigate to playback after 1 second
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         navigation.replace("Playback", { sessionId: response.sessionId });
       }, 1000);
-    } catch (error: any) {
+
+      return timeoutId;
+    } catch (error) {
       console.error("Failed to generate session:", error);
       setStatus("error");
+      return null;
     }
   };
+
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isMounted = true;
+
+    const runGeneration = async () => {
+      const result = await generateSession();
+      if (isMounted && result) {
+        timeoutId = result;
+      }
+    };
+
+    runGeneration();
+
+    // Cleanup timeout if component unmounts
+    return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount - goal and customPrompt come from route params
 
   const goalColors: Record<string, [string, string]> = {
     sleep: ["#2D1B69", "#8B7AB8"],
@@ -214,10 +183,19 @@ const GenerationScreen = ({ navigation, route }: Props) => {
         <Animated.View entering={FadeIn.delay(300).duration(600)} className="mt-12 items-center">
           <Text className="text-white text-4xl font-bold">{goalTitles[goal]}</Text>
           <Text className="text-white/80 text-lg mt-6 text-center">
-            {status === "generating" && statusMessages.generating[messageIndex]}
+            {status === "generating" && (
+              <>
+                {userName ? `Crafting your affirmations, ${userName}...` : statusMessages.generating[messageIndex]}
+              </>
+            )}
             {status === "ready" && statusMessages.ready[0]}
             {status === "error" && statusMessages.error[0]}
           </Text>
+          {status === "generating" && (
+            <Text className="text-white/60 text-sm mt-3 text-center">
+              This takes a few seconds...
+            </Text>
+          )}
         </Animated.View>
 
         {status === "error" && (

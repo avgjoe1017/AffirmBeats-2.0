@@ -12,6 +12,7 @@ import { preferencesRouter } from "./routes/preferences";
 import { sessionsRouter } from "./routes/sessions";
 import { ttsRouter } from "./routes/tts";
 import { subscription } from "./routes/subscription";
+import { audioRouter } from "./routes/audio";
 import { type AppType } from "./types";
 import { resetMonthlyCounters } from "./utils/subscriptionReset";
 
@@ -61,6 +62,9 @@ app.route("/api/tts", ttsRouter);
 
 console.log("💳 Mounting subscription routes at /api/subscription");
 app.route("/api/subscription", subscription);
+
+console.log("🎵 Mounting audio routes at /api/audio");
+app.route("/api/audio", audioRouter);
 
 // Health check endpoint
 // Used by load balancers and monitoring tools to verify service is running

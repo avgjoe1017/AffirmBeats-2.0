@@ -113,6 +113,10 @@ model AffirmationSession {
   binauralHz   String? // e.g., "0.5-4", "4-8", "8-14", "14-30", "30-100"
   createdAt    DateTime @default(now())
 
+  // Indexes for common query patterns
+  @@index([userId, createdAt]) // For fetching user sessions ordered by date
+  @@index([userId, isFavorite]) // For fetching user's favorite sessions
+  @@index([goal]) // For filtering sessions by goal type
   @@map("affirmation_session")
 }
 
@@ -131,5 +135,27 @@ model UserSubscription {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  // Indexes for monthly reset queries
+  @@index([lastResetDate, tier]) // For finding subscriptions that need reset
+  @@index([tier, status]) // For filtering by subscription tier and status
   @@map("user_subscription")
+}
+
+model TtsCache {
+  id          String   @id @default(cuid())
+  cacheKey    String   @unique // SHA-256 hash of affirmations + voice + pace + spacing
+  filePath    String   // Path to cached audio file
+  fileSize    Int      // File size in bytes
+  affirmationsCount Int // Number of affirmations in this audio
+  voiceType   String   // neutral/confident/whisper
+  pace        String   // slow/normal/fast
+  affirmationSpacing Int // Seconds between affirmations
+  createdAt   DateTime @default(now())
+  lastAccessedAt DateTime @default(now()) @updatedAt
+  accessCount Int      @default(0) // Track how many times this cache was used
+
+  // Indexes for cleanup and monitoring
+  @@index([lastAccessedAt]) // For finding old unused cache entries
+  @@index([cacheKey]) // Fast lookup by cache key
+  @@map("tts_cache")
 }

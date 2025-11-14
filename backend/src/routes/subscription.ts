@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { db } from "../db";
-import type { AppType } from "../index";
+import type { AppType } from "../types";
 import {
-  getSubscriptionResponseSchema,
+  type GetSubscriptionResponse,
   upgradeSubscriptionRequestSchema,
-  upgradeSubscriptionResponseSchema,
-  cancelSubscriptionResponseSchema,
+  type UpgradeSubscriptionResponse,
+  type CancelSubscriptionResponse,
 } from "@/shared/contracts";
 import { checkAndResetIfNeeded } from "../utils/subscriptionReset";
 
@@ -69,7 +69,7 @@ subscription.get("/", async (c) => {
       customSessionsUsedThisMonth: 0,
       customSessionsLimit: 1,
       canCreateCustomSession: true,
-    } satisfies typeof getSubscriptionResponseSchema._type, 200);
+    } satisfies GetSubscriptionResponse, 200);
   }
 
   const userSubscription = await getOrCreateSubscription(session.userId);
@@ -90,7 +90,7 @@ subscription.get("/", async (c) => {
     customSessionsUsedThisMonth: userSubscription.customSessionsUsedThisMonth,
     customSessionsLimit: limit === Infinity ? 999 : limit,
     canCreateCustomSession: canCreate,
-  } satisfies typeof getSubscriptionResponseSchema._type, 200);
+  } satisfies GetSubscriptionResponse, 200);
 });
 
 // POST /api/subscription/upgrade - Upgrade to Pro
@@ -111,7 +111,7 @@ subscription.post("/upgrade", zValidator("json", upgradeSubscriptionRequestSchem
     periodEnd.setFullYear(periodEnd.getFullYear() + 1);
   }
 
-  const userSubscription = await getOrCreateSubscription(session.userId);
+  await getOrCreateSubscription(session.userId);
 
   // Update to Pro
   await db.userSubscription.update({
@@ -129,7 +129,7 @@ subscription.post("/upgrade", zValidator("json", upgradeSubscriptionRequestSchem
   return c.json({
     success: true,
     message: `Successfully upgraded to Pro (${billingPeriod})`,
-  } satisfies typeof upgradeSubscriptionResponseSchema._type, 200);
+  } satisfies UpgradeSubscriptionResponse, 200);
 });
 
 // POST /api/subscription/cancel - Cancel subscription
@@ -156,7 +156,7 @@ subscription.post("/cancel", async (c) => {
   return c.json({
     success: true,
     message: "Subscription will be cancelled at the end of the current billing period",
-  } satisfies typeof cancelSubscriptionResponseSchema._type, 200);
+  } satisfies CancelSubscriptionResponse, 200);
 });
 
 // POST /api/subscription/track-usage - Internal endpoint to track custom session creation

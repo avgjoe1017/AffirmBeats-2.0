@@ -1,4 +1,4 @@
-import { z, type ZodType } from "zod";
+import { z } from "zod";
 
 /**
  * Environment variable schema using Zod
@@ -63,9 +63,11 @@ export type Env = EnvType;
 
 /**
  * Extend process.env with our environment variables
+ * This allows TypeScript to recognize our custom env vars on process.env
  */
 declare global {
   namespace NodeJS {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface ProcessEnv extends EnvType {}
   }
 }

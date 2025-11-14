@@ -5,9 +5,8 @@
  * It handles authentication, request formatting, error handling, and response parsing.
  */
 
-// Import fetch from expo/fetch for React Native compatibility
-// This ensures fetch works correctly across different platforms (iOS, Android, Web)
-import { fetch } from "expo/fetch";
+// Use global fetch (available in React Native 0.81.5+ / Expo SDK 54+)
+// No need to import from expo/fetch as global fetch is now available
 
 // Import the authentication client to access user session cookies
 import { authClient } from "./authClient";
@@ -98,7 +97,7 @@ const fetchFn = async <T>(path: string, options: FetchOptions): Promise<T> => {
           console.error(`[api.ts] Non-JSON error response:`, textResponse.substring(0, 200));
           errorData = { message: textResponse.substring(0, 100) };
         }
-      } catch (parseError) {
+      } catch {
         errorData = { message: "Failed to parse error response" };
       }
 
