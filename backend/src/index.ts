@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { logger as honoLogger } from "hono/logger";
 import { serveStatic } from "@hono/node-server/serve-static";
 
 import { auth } from "./auth";
@@ -13,15 +13,54 @@ import { sessionsRouter } from "./routes/sessions";
 import { ttsRouter } from "./routes/tts";
 import { subscription } from "./routes/subscription";
 import { audioRouter } from "./routes/audio";
+import { metricsRouter } from "./routes/metrics";
 import { type AppType } from "./types";
 import { resetMonthlyCounters } from "./utils/subscriptionReset";
+import { logger } from "./lib/logger";
+import { initSentry } from "./lib/sentry";
+import { isRedisAvailable } from "./lib/redis";
+import { errorHandler } from "./middleware/errorHandler";
+import { requestLogger } from "./middleware/requestLogger";
+import { metricsMiddleware } from "./middleware/metricsMiddleware";
 
 // AppType context adds user and session to the context, will be null if the user or session is null
-const app = new Hono<AppType>();
+export const app = new Hono<AppType>();
 
-console.log("🔧 Initializing Hono application...");
-app.use("*", logger());
+// Initialize Sentry if configured
+initSentry().catch((error) => {
+  logger.error("Failed to initialize Sentry", error);
+});
+
+// Initialize production metrics integrations if configured
+if (env.NODE_ENV === "production" || env.NODE_ENV === "staging") {
+  // Initialize DataDog metrics if configured
+  if (env.DATADOG_API_KEY) {
+    import("./lib/metrics/datadog")
+      .then(({ initDataDogMetrics }) => initDataDogMetrics())
+      .catch((error) => {
+        logger.error("Failed to initialize DataDog metrics", error);
+      });
+  }
+
+  // Initialize CloudWatch metrics if configured
+  if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) {
+    import("./lib/metrics/cloudwatch")
+      .then(({ initCloudWatchMetrics }) => initCloudWatchMetrics())
+      .catch((error) => {
+        logger.error("Failed to initialize CloudWatch metrics", error);
+      });
+  }
+}
+
+logger.info("Initializing Hono application");
+app.use("*", honoLogger());
 app.use("/*", cors());
+
+// Request logger middleware (before routes for timing)
+app.use("*", requestLogger);
+
+// Metrics middleware (before routes for timing)
+app.use("*", metricsMiddleware);
 
 /** Authentication middleware
  * Extracts session from request headers and attaches user/session to context
@@ -34,43 +73,133 @@ app.use("*", async (c, next) => {
   return next();
 });
 
+// Error handler (must be registered after routes but before server starts)
+// This will catch all errors that occur in routes
+app.onError(errorHandler);
+
 // Better Auth handler
 // Handles all authentication endpoints: /api/auth/sign-in, /api/auth/sign-up, etc.
-console.log("🔐 Mounting Better Auth handler at /api/auth/*");
+logger.info("Mounting Better Auth handler at /api/auth/*");
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 // Serve uploaded images statically
 // Files in uploads/ directory are accessible at /uploads/* URLs
-console.log("📁 Serving static files from uploads/ directory");
+logger.info("Serving static files from uploads/ directory");
 app.use("/uploads/*", serveStatic({ root: "./" }));
 
 // Mount route modules
-console.log("📤 Mounting upload routes at /api/upload");
+logger.info("Mounting upload routes at /api/upload");
 app.route("/api/upload", uploadRouter);
 
-console.log("📝 Mounting sample routes at /api/sample");
+logger.info("Mounting sample routes at /api/sample");
 app.route("/api/sample", sampleRouter);
 
-console.log("⚙️  Mounting preferences routes at /api/preferences");
+logger.info("Mounting preferences routes at /api/preferences");
 app.route("/api/preferences", preferencesRouter);
 
-console.log("🎵 Mounting sessions routes at /api/sessions");
+logger.info("Mounting sessions routes at /api/sessions");
 app.route("/api/sessions", sessionsRouter);
 
-console.log("🎤 Mounting TTS routes at /api/tts");
+logger.info("Mounting TTS routes at /api/tts");
 app.route("/api/tts", ttsRouter);
 
-console.log("💳 Mounting subscription routes at /api/subscription");
+logger.info("Mounting subscription routes at /api/subscription");
 app.route("/api/subscription", subscription);
 
-console.log("🎵 Mounting audio routes at /api/audio");
+logger.info("Mounting audio routes at /api/audio");
 app.route("/api/audio", audioRouter);
+
+logger.info("Mounting metrics routes at /api/metrics");
+app.route("/api/metrics", metricsRouter);
 
 // Health check endpoint
 // Used by load balancers and monitoring tools to verify service is running
-app.get("/health", (c) => {
-  console.log("💚 Health check requested");
-  return c.json({ status: "ok" });
+app.get("/health", async (c) => {
+  logger.debug("Health check requested");
+  
+  const startTime = Date.now();
+  const health = {
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version || "unknown",
+    uptime: process.uptime(),
+    checks: {
+      database: "unknown",
+      redis: "unknown",
+      // Add more checks as needed (external APIs, etc.)
+    },
+    metrics: {
+      // Basic metrics snapshot
+      totalRequests: 0,
+      errorRate: 0,
+    },
+  };
+
+  try {
+    // Check database connectivity
+    const { db } = await import("./db");
+    const dbStartTime = Date.now();
+    // Use a simple query to test connectivity
+    if (env.DATABASE_URL.startsWith("file:")) {
+      // SQLite
+      await db.$queryRawUnsafe("SELECT 1");
+    } else {
+      // PostgreSQL or other
+      await db.$queryRaw`SELECT 1`;
+    }
+    const dbDuration = Date.now() - dbStartTime;
+    health.checks.database = "ok";
+    logger.debug("Database health check passed", { duration: `${dbDuration}ms` });
+  } catch (error) {
+    logger.error("Database health check failed", error);
+    health.checks.database = "error";
+    health.status = "degraded";
+  }
+
+  // Check Redis connectivity
+  try {
+    const redisStartTime = Date.now();
+    const redisAvailable = await isRedisAvailable();
+    const redisDuration = Date.now() - redisStartTime;
+    health.checks.redis = redisAvailable ? "ok" : "unavailable";
+    logger.debug("Redis health check completed", { 
+      available: redisAvailable, 
+      duration: `${redisDuration}ms` 
+    });
+  } catch (error) {
+    logger.error("Redis health check failed", error);
+    health.checks.redis = "error";
+    // Don't degrade status if Redis is unavailable (it's optional)
+  }
+
+  // Add basic metrics snapshot
+  try {
+    const { metrics } = await import("./lib/metrics");
+    const apiRequestStats = metrics.getSummary("api.request.count");
+    const apiErrorStats = metrics.getSummary("api.error.count");
+    
+    if (apiRequestStats) {
+      health.metrics.totalRequests = apiRequestStats.count;
+    }
+    
+    if (apiRequestStats && apiErrorStats) {
+      health.metrics.errorRate = apiErrorStats.count / apiRequestStats.count;
+    }
+  } catch (error) {
+    logger.debug("Failed to get metrics snapshot", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Don't fail health check if metrics are unavailable
+  }
+
+  const duration = Date.now() - startTime;
+  logger.debug("Health check completed", { 
+    status: health.status, 
+    duration: `${duration}ms` 
+  });
+
+  const statusCode = health.status === "ok" ? 200 : 503;
+  return c.json(health, statusCode);
 });
 
 // Scheduled task endpoint for monthly subscription resets
@@ -82,13 +211,14 @@ app.post("/api/admin/reset-subscriptions", async (c) => {
   
   try {
     const count = await resetMonthlyCounters();
+    logger.info("Monthly subscription counters reset", { count });
     return c.json({ 
       success: true, 
       message: `Reset ${count} subscription counter(s)`,
       count 
     });
   } catch (error) {
-    console.error("❌ [Admin] Failed to reset subscriptions:", error);
+    logger.error("Failed to reset subscription counters", error);
     return c.json({ 
       success: false, 
       message: "Failed to reset subscriptions",
@@ -98,22 +228,26 @@ app.post("/api/admin/reset-subscriptions", async (c) => {
 });
 
 // Start the server
-console.log("⚙️  Starting server...");
+logger.info("Starting server", { port: env.PORT, environment: env.NODE_ENV });
 serve({ fetch: app.fetch, port: Number(env.PORT) }, () => {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log(`📍 Environment: ${env.NODE_ENV}`);
-  console.log(`🚀 Server is running on port ${env.PORT}`);
-  console.log(`🔗 Base URL: http://localhost:${env.PORT}`);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("\n📚 Available endpoints:");
-  console.log("  🔐 Auth:         /api/auth/*");
-  console.log("  📤 Upload:       POST /api/upload/image");
-  console.log("  📝 Sample:       GET/POST /api/sample");
-  console.log("  ⚙️  Preferences:  GET/PATCH /api/preferences");
-  console.log("  🎵 Sessions:     GET/POST /api/sessions");
-  console.log("  🎤 TTS:          POST /api/tts/generate");
-  console.log("  💳 Subscription: GET/POST /api/subscription");
-  console.log("  💚 Health:       GET /health");
-  console.log("  🔄 Admin:         POST /api/admin/reset-subscriptions");
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  logger.info("Server started successfully", {
+    port: env.PORT,
+    environment: env.NODE_ENV,
+    baseUrl: `http://localhost:${env.PORT}`,
+  });
+  
+  // Log available endpoints in development
+  if (env.NODE_ENV === "development") {
+    logger.debug("Available endpoints", {
+      auth: "/api/auth/*",
+      upload: "POST /api/upload/image",
+      sample: "GET/POST /api/sample",
+      preferences: "GET/PATCH /api/preferences",
+      sessions: "GET/POST /api/sessions",
+      tts: "POST /api/tts/generate",
+      subscription: "GET/POST /api/subscription",
+      health: "GET /health",
+      admin: "POST /api/admin/reset-subscriptions",
+    });
+  }
 });

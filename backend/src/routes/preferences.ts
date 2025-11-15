@@ -7,6 +7,8 @@ import {
 } from "@/shared/contracts";
 import { type AppType } from "../types";
 import { db } from "../db";
+import { getCached, deleteCache } from "../lib/redis";
+import { logger } from "../lib/logger";
 
 const preferencesRouter = new Hono<AppType>();
 
@@ -24,30 +26,38 @@ preferencesRouter.get("/", async (c) => {
     }, 401);
   }
 
-  console.log(`📋 [Preferences] Getting preferences for user: ${user.id}`);
+  logger.info("Getting preferences", { userId: user.id });
 
-  // Get or create preferences
-  let preferences = await db.userPreferences.findUnique({
-    where: { userId: user.id },
-  });
+  // Get or create preferences (with caching)
+  const preferences = await getCached(
+    `preferences:${user.id}`,
+    async () => {
+      let pref = await db.userPreferences.findUnique({
+        where: { userId: user.id },
+      });
 
-  if (!preferences) {
-    console.log(`📝 [Preferences] Creating default preferences for user: ${user.id}`);
-    preferences = await db.userPreferences.create({
-      data: {
-        userId: user.id,
-        voice: "neutral",
-        pace: "normal",
-        noise: "rain",
-        pronounStyle: "you",
-        intensity: "gentle",
-      },
-    });
-  }
+      if (!pref) {
+        logger.info("Creating default preferences", { userId: user.id });
+        pref = await db.userPreferences.create({
+          data: {
+            userId: user.id,
+            voice: "neutral",
+            pace: "normal",
+            noise: "rain",
+            pronounStyle: "you",
+            intensity: "gentle",
+          },
+        });
+      }
+
+      return pref;
+    },
+    3600 // Cache for 1 hour
+  );
 
   return c.json({
     voice: preferences.voice as "neutral" | "confident" | "whisper",
-    pace: preferences.pace as "slow" | "normal" | "fast",
+    pace: preferences.pace as "slow" | "normal",
     noise: preferences.noise as "rain" | "brown" | "none",
     pronounStyle: preferences.pronounStyle as "you" | "i",
     intensity: preferences.intensity as "gentle" | "assertive",
@@ -69,7 +79,7 @@ preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema),
   }
 
   const updates: UpdatePreferencesRequest = c.req.valid("json");
-  console.log(`📝 [Preferences] Updating preferences for user: ${user.id}`, updates);
+  logger.info("Updating preferences", { userId: user.id, updates });
 
   // Upsert preferences
   const preferences = await db.userPreferences.upsert({
@@ -85,9 +95,14 @@ preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema),
     },
   });
 
+  // Invalidate cache
+  await deleteCache(`preferences:${user.id}`);
+
+  logger.info("Preferences updated", { userId: user.id });
+
   return c.json({
     voice: preferences.voice as "neutral" | "confident" | "whisper",
-    pace: preferences.pace as "slow" | "normal" | "fast",
+    pace: preferences.pace as "slow" | "normal",
     noise: preferences.noise as "rain" | "brown" | "none",
     pronounStyle: preferences.pronounStyle as "you" | "i",
     intensity: preferences.intensity as "gentle" | "assertive",

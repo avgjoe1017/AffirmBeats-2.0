@@ -192,9 +192,11 @@ const GenerationScreen = ({ navigation, route }: Props) => {
             {status === "error" && statusMessages.error[0]}
           </Text>
           {status === "generating" && (
-            <Text className="text-white/60 text-sm mt-3 text-center">
-              This takes a few seconds...
-            </Text>
+            <Animated.View entering={FadeIn.delay(600).duration(400)}>
+              <Text className="text-white/60 text-sm mt-3 text-center">
+                Take a breath while you wait.
+              </Text>
+            </Animated.View>
           )}
         </Animated.View>
 

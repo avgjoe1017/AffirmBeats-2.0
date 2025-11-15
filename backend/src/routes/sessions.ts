@@ -15,11 +15,15 @@ import { db } from "../db";
 import OpenAI from "openai";
 import { rateLimiters } from "../middleware/rateLimit";
 import { getOrCreateSubscription, SUBSCRIPTION_LIMITS } from "./subscription";
+import { logger, loggers } from "../lib/logger";
+import { metricHelpers } from "../lib/metrics";
+import { getCached, deleteCache, deleteCachePattern } from "../lib/redis";
+import { env } from "../env";
 
 const sessionsRouter = new Hono<AppType>();
 
 // Initialize OpenAI client (if API key is available)
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const openai = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
 
 // Affirmation prompts for each goal type
 const AFFIRMATION_PROMPTS = {
@@ -187,7 +191,7 @@ const DEFAULT_SESSIONS = [
       "I finish this session proud of my clarity and output.",
     ],
     voiceId: "confident",
-    pace: "fast",
+    pace: "normal",
     noise: "none",
     lengthSec: 180,
     isFavorite: false,
@@ -518,7 +522,7 @@ async function generateAffirmations(
   // Use OpenAI if available
   if (openai) {
     try {
-      console.log(`🤖 [Sessions] Generating affirmations for goal: ${goal} using OpenAI`);
+      logger.info("Generating affirmations using OpenAI", { goal, hasCustomPrompt: !!customPrompt });
 
       // If custom prompt is provided, customize the generation
       const basePrompt = customPrompt
@@ -545,16 +549,16 @@ Output: plaintext lines, no numbering, one line per affirmation.`
         .slice(0, 10); // Allow up to 10 affirmations
 
       if (affirmations.length >= 6) {
-        console.log(`✅ [Sessions] Generated ${affirmations.length} affirmations via OpenAI`);
+        logger.info("Generated affirmations via OpenAI", { goal, count: affirmations.length });
         return affirmations;
       }
     } catch (error) {
-      console.error("❌ [Sessions] OpenAI generation failed:", error);
+      logger.error("OpenAI generation failed", error, { goal });
     }
   }
 
   // Fallback to predefined affirmations
-  console.log(`📝 [Sessions] Using fallback affirmations for goal: ${goal}`);
+  logger.info("Using fallback affirmations", { goal });
   return FALLBACK_AFFIRMATIONS[goal];
 }
 
@@ -564,19 +568,32 @@ Output: plaintext lines, no numbering, one line per affirmation.`
 sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generateSessionRequestSchema), async (c) => {
   const user = c.get("user");
 
-  const { goal, customPrompt } = c.req.valid("json");
-  console.log(`🎵 [Sessions] Generating session for ${user ? `user: ${user.id}` : 'guest'}, goal: ${goal}${customPrompt ? ', with custom prompt' : ''}`);
+  const { goal, customPrompt, binauralCategory, binauralHz } = c.req.valid("json");
+  const sessionGenerationStartTime = Date.now();
+  logger.info("Generating session", { 
+    userId: user?.id || "guest", 
+    goal, 
+    hasCustomPrompt: !!customPrompt,
+    binauralCategory,
+  });
 
   // Use default preferences if user is not authenticated
   let voice = "neutral";
   let pace = "normal";
   let noise = "rain";
 
-  // If user is authenticated, get their preferences
+  // If user is authenticated, get their preferences (with caching)
   if (user) {
-    const preferences = await db.userPreferences.findUnique({
-      where: { userId: user.id },
-    });
+    const preferences = await getCached(
+      `preferences:${user.id}`,
+      async () => {
+        return await db.userPreferences.findUnique({
+          where: { userId: user.id },
+        });
+      },
+      3600 // Cache for 1 hour
+    );
+    
     if (preferences) {
       voice = preferences.voice;
       pace = preferences.pace;
@@ -589,7 +606,7 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
 
   // Calculate session length based on pace
   const baseLengthSec = 180; // 3 minutes base
-  const lengthMultiplier = pace === "slow" ? 1.3 : pace === "fast" ? 0.8 : 1.0;
+  const lengthMultiplier = pace === "slow" ? 1.3 : 1.0;
   const lengthSec = Math.round(baseLengthSec * lengthMultiplier);
 
   // Create title
@@ -615,12 +632,21 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
             noise,
             lengthSec,
             isFavorite: false,
+            binauralCategory: binauralCategory || null,
+            binauralHz: binauralHz || null,
           },
         })
       ).id
     : `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-  console.log(`✅ [Sessions] Session ${user ? 'created' : 'generated'}: ${sessionId}`);
+  const sessionCreationDuration = Date.now() - sessionGenerationStartTime;
+  loggers.sessionCreated(sessionId, user?.id || "guest", goal);
+  metricHelpers.sessionCreation(goal, sessionCreationDuration);
+
+  // Invalidate user sessions cache if authenticated
+  if (user) {
+    await deleteCache(`sessions:${user.id}`);
+  }
 
   return c.json({
     sessionId,
@@ -631,6 +657,8 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
     pace,
     noise,
     lengthSec,
+    binauralCategory: binauralCategory || undefined,
+    binauralHz: binauralHz || undefined,
   } satisfies GenerateSessionResponse);
 });
 
@@ -641,9 +669,14 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
   const user = c.get("user");
 
   const { title, binauralCategory, binauralHz, affirmations, goal: providedGoal } = c.req.valid("json");
+  const customSessionCreationStartTime = Date.now();
 
-  console.log(`🎵 [Sessions] Creating custom session for ${user ? `user: ${user.id}` : 'guest'}`);
-  console.log(`📝 [Sessions] Title: ${title}, Category: ${binauralCategory}, Affirmations: ${affirmations.length}`);
+  logger.info("Creating custom session", { 
+    userId: user?.id || "guest", 
+    title, 
+    binauralCategory, 
+    affirmationsCount: affirmations.length 
+  });
 
   // Check subscription limits for authenticated users (atomic check + increment)
   let userSubscription = user ? await getOrCreateSubscription(user.id) : null;
@@ -667,7 +700,11 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
       });
 
       if (updateResult.count === 0) {
-        console.log(`⛔ [Sessions] User ${user.id} has reached custom session limit`);
+        logger.warn("Custom session limit exceeded", { 
+          userId: user.id, 
+          limit, 
+          used: userSubscription.customSessionsUsedThisMonth 
+        });
         return c.json(
           {
             error: "SUBSCRIPTION_LIMIT_EXCEEDED",
@@ -706,11 +743,18 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
   let pace = "normal";
   let noise = "rain";
 
-  // If user is authenticated, get their preferences
+  // If user is authenticated, get their preferences (with caching)
   if (user) {
-    const preferences = await db.userPreferences.findUnique({
-      where: { userId: user.id },
-    });
+    const preferences = await getCached(
+      `preferences:${user.id}`,
+      async () => {
+        return await db.userPreferences.findUnique({
+          where: { userId: user.id },
+        });
+      },
+      3600 // Cache for 1 hour
+    );
+    
     if (preferences) {
       voice = preferences.voice;
       pace = preferences.pace;
@@ -720,7 +764,7 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
 
   // Calculate session length based on pace and number of affirmations
   const baseLengthPerAffirmation = 30; // 30 seconds per affirmation
-  const lengthMultiplier = pace === "slow" ? 1.3 : pace === "fast" ? 0.8 : 1.0;
+  const lengthMultiplier = pace === "slow" ? 1.3 : 1.0;
   const lengthSec = Math.round(affirmations.length * baseLengthPerAffirmation * lengthMultiplier);
 
   // Generate a temporary session ID for guest users, or save to DB for authenticated users
@@ -749,10 +793,16 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
       // Usage was already tracked atomically above (for free tier)
       // For Pro users, no tracking needed
       if (userSubscription && userSubscription.tier === "pro") {
-        console.log(`📊 [Sessions] Pro user - unlimited sessions`);
+        logger.debug("Pro user - unlimited sessions", { userId: user.id });
       } else if (userSubscription) {
-        console.log(`📊 [Sessions] Usage tracked: ${userSubscription.customSessionsUsedThisMonth} custom sessions this month`);
+        logger.debug("Usage tracked", { 
+          userId: user.id, 
+          customSessionsUsedThisMonth: userSubscription.customSessionsUsedThisMonth 
+        });
       }
+      
+      // Invalidate cache
+      await deleteCache(`sessions:${user.id}`);
     } catch (error) {
       // If session creation fails, rollback the counter increment for free tier
       if (userSubscription && userSubscription.tier !== "pro") {
@@ -762,15 +812,18 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
             customSessionsUsedThisMonth: { decrement: 1 },
           },
         });
-        console.log(`⚠️ [Sessions] Rolled back counter due to session creation failure`);
+        logger.warn("Rolled back counter due to session creation failure", { userId: user.id });
       }
+      loggers.sessionError("", user.id, error as Error);
       throw error;
     }
   } else {
     sessionId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  console.log(`✅ [Sessions] Custom session ${user ? 'created' : 'generated'}: ${sessionId}`);
+  const customSessionCreationDuration = Date.now() - customSessionCreationStartTime;
+  loggers.sessionCreated(sessionId, user?.id || "guest", goal);
+  metricHelpers.sessionCreation(goal, customSessionCreationDuration);
 
   return c.json({
     sessionId,
@@ -794,18 +847,25 @@ sessionsRouter.get("/", async (c) => {
 
   // For guest users, return default sessions
   if (!user) {
-    console.log(`📚 [Sessions] Returning default sessions for guest user`);
+    logger.debug("Returning default sessions for guest user");
     return c.json({
       sessions: DEFAULT_SESSIONS,
     } satisfies GetSessionsResponse);
   }
 
-  console.log(`📚 [Sessions] Fetching sessions for user: ${user.id}`);
+  logger.info("Fetching sessions", { userId: user.id });
 
-  const userSessions = await db.affirmationSession.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
+  // Get user sessions with caching
+  const userSessions = await getCached(
+    `sessions:${user.id}`,
+    async () => {
+      return await db.affirmationSession.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: "desc" },
+      });
+    },
+    300 // Cache for 5 minutes
+  );
 
   // Combine user sessions with default sessions
   const allSessions = [
@@ -820,6 +880,8 @@ sessionsRouter.get("/", async (c) => {
       lengthSec: session.lengthSec,
       isFavorite: session.isFavorite,
       createdAt: session.createdAt.toISOString(),
+      binauralCategory: session.binauralCategory || undefined,
+      binauralHz: session.binauralHz || undefined,
     })),
     ...DEFAULT_SESSIONS,
   ];
@@ -855,7 +917,7 @@ sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSc
     }, 403);
   }
 
-  console.log(`⭐ [Sessions] Toggling favorite for session: ${sessionId}, value: ${isFavorite}`);
+  logger.info("Toggling favorite", { sessionId, userId: user.id, isFavorite });
 
   // Verify session belongs to user
   const session = await db.affirmationSession.findFirst({
@@ -875,6 +937,9 @@ sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSc
     where: { id: sessionId },
     data: { isFavorite },
   });
+
+  // Invalidate cache
+  await deleteCache(`sessions:${user.id}`);
 
   return c.json({ success: true });
 });
@@ -900,7 +965,7 @@ sessionsRouter.delete("/:id", async (c) => {
     return c.json({ message: "Cannot delete default sessions" }, 403);
   }
 
-  console.log(`🗑️ [Sessions] Deleting session: ${sessionId}`);
+  logger.info("Deleting session", { sessionId, userId: user.id });
 
   // Verify session belongs to user before deleting
   const session = await db.affirmationSession.findFirst({
@@ -918,6 +983,11 @@ sessionsRouter.delete("/:id", async (c) => {
   await db.affirmationSession.delete({
     where: { id: sessionId },
   });
+
+  // Invalidate cache
+  await deleteCache(`sessions:${user.id}`);
+
+  logger.info("Session deleted", { sessionId, userId: user.id });
 
   return c.json({ success: true });
 });
@@ -948,7 +1018,7 @@ sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), asy
     }, 403);
   }
 
-  console.log(`✏️ [Sessions] Updating session: ${sessionId}`);
+  logger.info("Updating session", { sessionId, userId: user.id, updates });
 
   // Verify session belongs to user
   const session = await db.affirmationSession.findFirst({
@@ -989,7 +1059,10 @@ sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), asy
     data: updateData,
   });
 
-  console.log(`✅ [Sessions] Session updated successfully: ${sessionId}`);
+  // Invalidate cache
+  await deleteCache(`sessions:${user.id}`);
+
+  logger.info("Session updated successfully", { sessionId, userId: user.id });
 
   return c.json({ success: true } satisfies UpdateSessionResponse);
 });

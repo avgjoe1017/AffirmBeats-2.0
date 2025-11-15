@@ -1,12 +1,15 @@
 /**
  * Rate Limiting Middleware
  * 
- * Simple in-memory rate limiter for protecting expensive endpoints.
- * For production, consider using Redis or a more robust solution.
+ * Rate limiter using Redis for production, with in-memory fallback.
+ * Automatically uses Redis if available, falls back to in-memory store if not.
  */
 
 import type { Context, Next } from "hono";
 import type { AppType } from "../types";
+import { getRedis, isRedisAvailable } from "../lib/redis";
+import { logger } from "../lib/logger";
+import { metricHelpers } from "../lib/metrics";
 
 interface RateLimitStore {
   [key: string]: {
@@ -15,20 +18,22 @@ interface RateLimitStore {
   };
 }
 
-// In-memory store (clears on server restart)
-// For production, use Redis or similar
-const store: RateLimitStore = {};
+// In-memory store (fallback if Redis is not available)
+const inMemoryStore: RateLimitStore = {};
 
-// Clean up old entries every 5 minutes
+// Clean up old entries every 5 minutes (only for in-memory store)
 setInterval(() => {
   const now = Date.now();
-  Object.keys(store).forEach((key) => {
-    const record = store[key];
+  Object.keys(inMemoryStore).forEach((key) => {
+    const record = inMemoryStore[key];
     if (record && record.resetAt < now) {
-      delete store[key];
+      delete inMemoryStore[key];
     }
   });
 }, 5 * 60 * 1000);
+
+// Note: Redis rate limiting functions are now inline in the rateLimit middleware
+// This simplifies the implementation and reduces function calls
 
 /**
  * Rate limit middleware factory
@@ -51,39 +56,86 @@ export function rateLimit(options: {
       : c.get("user")?.id || c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "anonymous";
 
     const now = Date.now();
-    const record = store[key];
+    const useRedis = await isRedisAvailable();
+    let record: { count: number; resetAt: number } | null = null;
+    let currentCount = 0;
 
-    // Check if record exists and is still valid
-    if (record && record.resetAt > now) {
-      // Check if limit exceeded
-      if (record.count >= limit) {
-        const resetIn = Math.ceil((record.resetAt - now) / 1000);
-        console.log(`⛔ [RateLimit] ${key} exceeded limit of ${limit} requests`);
-        return c.json(
-          {
-            error: message || "Rate limit exceeded",
-            message: `Too many requests. Please try again in ${resetIn} second${resetIn !== 1 ? "s" : ""}.`,
-            retryAfter: resetIn,
-          },
-          429
-        );
+    if (useRedis) {
+      // Use Redis for rate limiting
+      try {
+        const redis = await getRedis();
+        if (redis) {
+          const redisKey = `ratelimit:${key}`;
+          const ttl = Math.ceil(windowMs / 1000);
+          
+          // Try to get existing record
+          const data = await redis.get(redisKey);
+          if (data) {
+            record = JSON.parse(data);
+          }
+
+          if (!record || record.resetAt <= now) {
+            // Create new record or reset expired one
+            record = {
+              count: 1,
+              resetAt: now + windowMs,
+            };
+            await redis.set(redisKey, JSON.stringify(record), "EX", ttl);
+            currentCount = 1;
+          } else {
+            // Increment counter and update record
+            currentCount = record.count + 1;
+            record.count = currentCount;
+            
+            // Update record in Redis
+            await redis.set(redisKey, JSON.stringify(record), "EX", ttl);
+          }
+        }
+      } catch (error) {
+        logger.error("Redis rate limit error, falling back to in-memory", error, { key });
+        // Fall through to in-memory fallback
       }
-
-      // Increment counter
-      record.count++;
-    } else {
-      // Create new record or reset expired one
-      store[key] = {
-        count: 1,
-        resetAt: now + windowMs,
-      };
     }
 
-    // Add rate limit headers (get fresh record after potential update)
-    const currentRecord = store[key]!;
+    // Fallback to in-memory store if Redis is not available or failed
+    if (!useRedis || !record) {
+      record = inMemoryStore[key];
+      
+      if (!record || record.resetAt <= now) {
+        // Create new record or reset expired one
+        record = {
+          count: 1,
+          resetAt: now + windowMs,
+        };
+        inMemoryStore[key] = record;
+        currentCount = 1;
+      } else {
+        // Increment counter
+        record.count++;
+        currentCount = record.count;
+      }
+    }
+
+        // Check if limit exceeded
+        if (currentCount > limit) {
+          const resetIn = Math.ceil((record.resetAt - now) / 1000);
+          logger.warn("Rate limit exceeded", { key, limit, currentCount, resetIn });
+          metricHelpers.rateLimitHit(key, limit);
+          return c.json(
+            {
+              error: message || "Rate limit exceeded",
+              code: "RATE_LIMIT_EXCEEDED",
+              message: `Too many requests. Please try again in ${resetIn} second${resetIn !== 1 ? "s" : ""}.`,
+              retryAfter: resetIn,
+            },
+            429
+          );
+        }
+
+    // Add rate limit headers
     c.header("X-RateLimit-Limit", limit.toString());
-    c.header("X-RateLimit-Remaining", Math.max(0, limit - currentRecord.count).toString());
-    c.header("X-RateLimit-Reset", Math.ceil(currentRecord.resetAt / 1000).toString());
+    c.header("X-RateLimit-Remaining", Math.max(0, limit - currentCount).toString());
+    c.header("X-RateLimit-Reset", Math.ceil(record.resetAt / 1000).toString());
 
     await next();
   };

@@ -9,11 +9,15 @@ import {
   getCachedAudio,
   saveCachedAudio,
 } from "../utils/ttsCache";
+import { logger } from "../lib/logger";
+import { metricHelpers } from "../lib/metrics";
+import { env } from "../env";
+import { db } from "../db";
 
 const ttsRouter = new Hono<AppType>();
 
 // ElevenLabs API configuration
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY;
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1";
 
 // Voice ID mapping for different voice types
@@ -22,6 +26,24 @@ const VOICE_IDS = {
   confident: "VR6AewLTigWG4xSOukaG", // Arnold - confident
   whisper: "EXAVITQu4vr4xnSDxMaL", // Bella - soft and gentle
 };
+
+// Premium voices that require Pro subscription
+const PREMIUM_VOICES = ["whisper"];
+
+/**
+ * Check if user has access to a premium voice
+ */
+async function canUsePremiumVoice(userId: string | null): Promise<boolean> {
+  if (!userId) {
+    return false; // Guest users can't use premium voices
+  }
+
+  const subscription = await db.userSubscription.findUnique({
+    where: { userId },
+  });
+
+  return subscription?.tier === "pro";
+}
 
 // Request schema
 const generateTTSRequestSchema = z.object({
@@ -43,9 +65,26 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
   }
 
   const { text, voiceType } = c.req.valid("json");
-  const voiceId = VOICE_IDS[voiceType];
+  
+  // Check premium voice access
+  if (PREMIUM_VOICES.includes(voiceType)) {
+    const session = c.get("session");
+    const userId = session?.userId ?? null;
+    const hasAccess = await canUsePremiumVoice(userId);
+    
+    if (!hasAccess) {
+      return c.json({
+        error: "SUBSCRIPTION_REQUIRED",
+        code: "SUBSCRIPTION_REQUIRED",
+        message: "This voice requires a Pro subscription. Please upgrade to access premium voices.",
+      }, 403);
+    }
+  }
 
-  console.log(`🎤 [TTS] Generating audio for voice: ${voiceType} (${voiceId})`);
+  const voiceId = VOICE_IDS[voiceType];
+  const generationStartTime = Date.now();
+
+  logger.info("Generating TTS audio", { voiceType, voiceId });
 
   try {
     // Call ElevenLabs API
@@ -53,7 +92,7 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "xi-api-key": ELEVENLABS_API_KEY,
+        "xi-api-key": ELEVENLABS_API_KEY!,
       },
       body: JSON.stringify({
         text,
@@ -67,7 +106,10 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ [TTS] ElevenLabs API error:", errorText);
+      logger.error("ElevenLabs API error", new Error(errorText), { 
+        status: response.status, 
+        voiceType 
+      });
       return c.json({ 
         error: "TTS_ERROR",
         code: "TTS_ERROR",
@@ -77,7 +119,9 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
     }
 
     // Stream the audio response
-    console.log("✅ [TTS] Audio generated successfully, streaming to client");
+    const generationDuration = Date.now() - generationStartTime;
+    logger.info("TTS audio generated successfully", { voiceType, duration: `${generationDuration}ms` });
+    metricHelpers.ttsGeneration(generationDuration, voiceType);
 
     // Convert ReadableStream to Uint8Array buffer
     const audioBuffer = await response.arrayBuffer();
@@ -88,7 +132,7 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
 
     return c.body(audioBuffer);
   } catch (error) {
-    console.error("❌ [TTS] Error generating audio:", error);
+    logger.error("Error generating TTS audio", error, { voiceType });
     return c.json({ 
       error: "INTERNAL_ERROR",
       code: "INTERNAL_ERROR",
@@ -109,7 +153,7 @@ ttsRouter.post(
     z.object({
       affirmations: z.array(z.string()),
       voiceType: z.enum(["neutral", "confident", "whisper"]),
-      pace: z.enum(["slow", "normal", "fast"]),
+      pace: z.enum(["slow", "normal"]),
       affirmationSpacing: z.number().min(0).max(60).optional(), // Seconds between affirmations
     })
   ),
@@ -123,7 +167,24 @@ ttsRouter.post(
     }
 
     const { affirmations, voiceType, pace, affirmationSpacing = 8 } = c.req.valid("json");
+    
+    // Check premium voice access
+    if (PREMIUM_VOICES.includes(voiceType)) {
+      const session = c.get("session");
+      const userId = session?.userId ?? null;
+      const hasAccess = await canUsePremiumVoice(userId);
+      
+      if (!hasAccess) {
+        return c.json({
+          error: "SUBSCRIPTION_REQUIRED",
+          code: "SUBSCRIPTION_REQUIRED",
+          message: "This voice requires a Pro subscription. Please upgrade to access premium voices.",
+        }, 403);
+      }
+    }
+    
     const voiceId = VOICE_IDS[voiceType];
+    const sessionGenerationStartTime = Date.now();
 
     // Generate cache key based on content
     const cacheKey = generateCacheKey(affirmations, voiceType, pace, affirmationSpacing);
@@ -132,7 +193,16 @@ ttsRouter.post(
     if (await hasCachedAudio(cacheKey)) {
       const cachedAudio = await getCachedAudio(cacheKey);
       if (cachedAudio) {
-        console.log(`💾 [TTS] Using cached audio for session (${affirmations.length} affirmations) - shared across all users`);
+        const cacheHitDuration = Date.now() - sessionGenerationStartTime;
+        logger.info("Using cached TTS audio", { 
+          affirmationsCount: affirmations.length,
+          voiceType,
+          pace,
+          duration: `${cacheHitDuration}ms`
+        });
+        // Record cache hit metric (duration is very short for cache hits)
+        metricHelpers.cacheOperation("hit", cacheKey);
+        metricHelpers.ttsGeneration(cacheHitDuration, voiceType);
         c.header("Content-Type", "audio/mpeg");
         c.header("Content-Length", cachedAudio.length.toString());
         c.header("X-Cache", "HIT");
@@ -140,7 +210,12 @@ ttsRouter.post(
       }
     }
 
-    console.log(`🎵 [TTS] Generating NEW session audio with ${affirmations.length} affirmations, spacing: ${affirmationSpacing}s`);
+    logger.info("Generating new TTS session audio", { 
+      affirmationsCount: affirmations.length, 
+      spacing: affirmationSpacing,
+      voiceType,
+      pace 
+    });
 
     // Combine all affirmations with SSML break tags for actual silence
     // ElevenLabs supports SSML, so we can use <break> tags for precise timing
@@ -166,14 +241,17 @@ ttsRouter.post(
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
-            speed: pace === "slow" ? 0.85 : pace === "fast" ? 1.15 : 1.0,
+            speed: pace === "slow" ? 0.85 : 1.0,
           },
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("❌ [TTS] ElevenLabs API error:", errorText);
+        logger.error("ElevenLabs API error for session audio", new Error(errorText), { 
+          status: response.status,
+          affirmationsCount: affirmations.length 
+        });
         return c.json({ 
           error: "TTS_ERROR",
           code: "TTS_ERROR",
@@ -182,7 +260,14 @@ ttsRouter.post(
         }, 500);
       }
 
-      console.log("✅ [TTS] Session audio generated successfully");
+      const sessionGenerationDuration = Date.now() - sessionGenerationStartTime;
+      logger.info("TTS session audio generated successfully", { 
+        affirmationsCount: affirmations.length,
+        voiceType,
+        pace,
+        duration: `${sessionGenerationDuration}ms`
+      });
+      metricHelpers.ttsGeneration(sessionGenerationDuration, voiceType);
 
       // Convert ReadableStream to buffer
       const audioBuffer = await response.arrayBuffer();
@@ -197,7 +282,9 @@ ttsRouter.post(
 
       return c.body(audioBuffer);
     } catch (error) {
-      console.error("❌ [TTS] Error generating session audio:", error);
+      logger.error("Error generating TTS session audio", error, { 
+        affirmationsCount: affirmations.length 
+      });
       return c.json({ 
         error: "INTERNAL_ERROR",
         code: "INTERNAL_ERROR",

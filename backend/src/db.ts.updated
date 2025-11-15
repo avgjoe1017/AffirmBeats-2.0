@@ -1,0 +1,61 @@
+// Prisma Database Client
+// ============================================
+// This is a singleton instance of the Prisma client
+// Used throughout the application for database operations
+//
+// Usage:
+//   import { db } from "./db";
+//   const users = await db.user.findMany();
+//
+// The Prisma schema is located at prisma/schema.prisma
+// After modifying the schema, run: bunx prisma generate
+import { PrismaClient } from "../generated/prisma";
+import { env } from "./env";
+import { logger } from "./lib/logger";
+
+const prismaClient = new PrismaClient({
+  log: env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+});
+
+// Initialize database connection
+// For PostgreSQL, no pragmas needed
+// For SQLite, we'll check if we're using SQLite and apply pragmas
+async function initDatabase() {
+  try {
+    // Test connection
+    await prismaClient.$connect();
+    logger.info("Database connected successfully");
+
+    // Check if we're using SQLite (for backward compatibility)
+    if (env.DATABASE_URL.startsWith("file:")) {
+      logger.debug("Using SQLite database, applying pragmas");
+      await prismaClient.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
+      await prismaClient.$queryRawUnsafe("PRAGMA foreign_keys = ON;");
+      await prismaClient.$queryRawUnsafe("PRAGMA busy_timeout = 10000;");
+      await prismaClient.$queryRawUnsafe("PRAGMA synchronous = NORMAL;");
+      await prismaClient.$queryRawUnsafe("PRAGMA cache_size = -32768;");
+      await prismaClient.$queryRawUnsafe("PRAGMA temp_store = MEMORY;");
+      await prismaClient.$queryRawUnsafe("PRAGMA optimize;");
+      logger.debug("SQLite pragmas applied");
+    } else {
+      logger.debug("Using PostgreSQL database");
+    }
+  } catch (error) {
+    logger.error("Failed to connect to database", error);
+    throw error;
+  }
+}
+
+// Initialize database on module load
+initDatabase().catch((error) => {
+  logger.error("Failed to initialize database", error);
+  process.exit(1);
+});
+
+// Handle graceful shutdown
+process.on("beforeExit", async () => {
+  await prismaClient.$disconnect();
+  logger.info("Database connection closed");
+});
+
+export const db = prismaClient;

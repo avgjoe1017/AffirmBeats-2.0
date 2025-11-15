@@ -8,6 +8,8 @@ import { useAppStore } from "@/state/appStore";
 import { api } from "@/lib/api";
 import type { CreateCustomSessionResponse, UpdateSessionResponse, GenerateSessionResponse } from "@/shared/contracts";
 import AffirmationLibraryModal from "@/components/AffirmationLibraryModal";
+import LockIcon from "@/components/LockIcon";
+import PaywallLockModal from "@/components/PaywallLockModal";
 
 type Props = RootStackScreenProps<"CreateSession">;
 
@@ -24,6 +26,7 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
   const { sessionId } = route.params || {};
   const sessions = useAppStore((s) => s.sessions);
   const subscription = useAppStore((s) => s.subscription);
+  const userName = useAppStore((s) => s.userName);
   const existingSession = sessionId ? sessions.find((s) => s.id === sessionId) : null;
 
   // AI-first: User describes what they want
@@ -44,6 +47,8 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showManualEdit, setShowManualEdit] = useState(!!existingSession);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const [lockedFeatureName, setLockedFeatureName] = useState<string | undefined>(undefined);
 
   const { setCurrentSession, addSession, updateSession } = useAppStore();
 
@@ -87,10 +92,16 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
   };
 
   const handleAddAffirmation = () => {
-    if (customAffirmations.length < 20) {
+    const maxAffirmations = subscription?.tier === "pro" ? 999 : 20;
+    if (customAffirmations.length < maxAffirmations) {
       setCustomAffirmations([...customAffirmations, ""]);
     } else {
-      setErrorMessage("Maximum 20 affirmations allowed per session");
+      if (subscription?.tier !== "pro") {
+        setLockedFeatureName("Unlimited Affirmations");
+        setShowPaywallModal(true);
+      } else {
+        setErrorMessage(`Maximum ${maxAffirmations} affirmations allowed per session`);
+      }
     }
   };
 
@@ -106,23 +117,34 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
   };
 
   const handleSelectFromLibrary = (affirmations: string[]) => {
-    // Add selected affirmations, but don't exceed 20 total
+    const maxAffirmations = subscription?.tier === "pro" ? 999 : 20;
     const currentCount = customAffirmations.length;
-    const remainingSlots = 20 - currentCount;
+    const remainingSlots = maxAffirmations - currentCount;
+    
+    if (remainingSlots <= 0 && subscription?.tier !== "pro") {
+      setLockedFeatureName("Unlimited Affirmations");
+      setShowPaywallModal(true);
+      return;
+    }
+    
+    // Add selected affirmations, but don't exceed limit
     const toAdd = affirmations.slice(0, remainingSlots);
     setCustomAffirmations([...customAffirmations, ...toAdd]);
-    if (affirmations.length > remainingSlots) {
-      setErrorMessage(`Added ${remainingSlots} affirmations. Maximum 20 affirmations per session.`);
+    if (affirmations.length > remainingSlots && subscription?.tier !== "pro") {
+      setErrorMessage(`Added ${remainingSlots} affirmations. Maximum ${maxAffirmations} affirmations per session. Upgrade to Pro for unlimited affirmations.`);
+    } else if (affirmations.length > remainingSlots) {
+      setErrorMessage(`Added ${remainingSlots} affirmations. Maximum ${maxAffirmations} affirmations per session.`);
     }
   };
 
   const validAffirmations = customAffirmations.filter((a) => a.trim().length >= 3);
+  const maxAffirmations = subscription?.tier === "pro" ? 999 : 20;
   const canProceed =
     sessionName.trim().length > 0 &&
     sessionName.trim().length <= 50 &&
     selectedCategory !== null &&
     validAffirmations.length > 0 &&
-    validAffirmations.length <= 20;
+    validAffirmations.length <= maxAffirmations;
 
   const handleCreateSession = async () => {
     if (!canProceed || !selectedCategory) return;
@@ -243,7 +265,7 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
           <Animated.View entering={FadeIn.duration(600)}>
             <View className="mb-8">
               <Text className="text-white text-2xl font-bold mb-2">
-                What do you want to create?
+                {userName ? `What do you want to create, ${userName}?` : "What do you want to create?"}
               </Text>
               <Text className="text-gray-400 text-base">
                 Describe your intention and AI will handle the rest
@@ -298,7 +320,7 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
                     <>
                       <ActivityIndicator color="#FFF" size="small" />
                       <Text className="text-white text-lg font-bold ml-3" style={{ letterSpacing: 0.5 }}>
-                        Crafting Your Session...
+                        {userName ? `Crafting your session, ${userName}...` : "Crafting Your Session..."}
                       </Text>
                     </>
                   ) : (
@@ -399,9 +421,14 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
             <View className="mb-6">
               <View className="flex-row items-center justify-between mb-3">
                 <Text className="text-gray-400 text-sm">Affirmations</Text>
-                <Text className="text-gray-500 text-xs">
-                  {customAffirmations.length}/20
-                </Text>
+                <View className="flex-row items-center">
+                  <Text className="text-gray-500 text-xs">
+                    {customAffirmations.length}/{subscription?.tier === "pro" ? "∞" : "20"}
+                  </Text>
+                  {subscription?.tier !== "pro" && customAffirmations.length >= 20 && (
+                    <LockIcon size={12} placement="inline" />
+                  )}
+                </View>
               </View>
               {customAffirmations.length > 0 ? (
                 customAffirmations.map((affirmation, index) => (
@@ -447,27 +474,43 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
 
               <View className="flex-row gap-3 mt-2">
                 <Pressable
-                  onPress={() => setShowLibraryModal(true)}
-                  disabled={customAffirmations.length >= 20}
-                  className={`flex-1 active:opacity-80 ${customAffirmations.length >= 20 ? "opacity-50" : ""}`}
+                  onPress={() => {
+                    const maxAffirmations = subscription?.tier === "pro" ? 999 : 20;
+                    if (customAffirmations.length >= maxAffirmations && subscription?.tier !== "pro") {
+                      setLockedFeatureName("Unlimited Affirmations");
+                      setShowPaywallModal(true);
+                      return;
+                    }
+                    setShowLibraryModal(true);
+                  }}
+                  className="flex-1 active:opacity-80"
                 >
-                  <View className="flex-row items-center justify-center py-3 rounded-xl border border-white/30 bg-white/5">
+                  <View className={`flex-row items-center justify-center py-3 rounded-xl border border-white/30 bg-white/5 relative ${
+                    subscription?.tier !== "pro" && customAffirmations.length >= 20 ? "opacity-60" : ""
+                  }`}>
                     <BookOpen size={18} color="#9333EA" />
                     <Text className="text-purple-400 font-semibold ml-2">
                       Library
                     </Text>
+                    {subscription?.tier !== "pro" && customAffirmations.length >= 20 && (
+                      <LockIcon size={12} placement="top-right" />
+                    )}
                   </View>
                 </Pressable>
                 <Pressable
                   onPress={handleAddAffirmation}
-                  disabled={customAffirmations.length >= 20}
-                  className={`flex-1 active:opacity-80 ${customAffirmations.length >= 20 ? "opacity-50" : ""}`}
+                  className="flex-1 active:opacity-80"
                 >
-                  <View className="flex-row items-center justify-center py-3 rounded-xl border border-dashed border-white/30">
+                  <View className={`flex-row items-center justify-center py-3 rounded-xl border border-dashed border-white/30 relative ${
+                    subscription?.tier !== "pro" && customAffirmations.length >= 20 ? "opacity-60" : ""
+                  }`}>
                     <Plus size={18} color="#9333EA" />
                     <Text className="text-purple-400 font-semibold ml-2">
-                      {customAffirmations.length >= 20 ? "Max" : "Write"}
+                      {subscription?.tier === "pro" ? "Add" : customAffirmations.length >= 20 ? "Max" : "Write"}
                     </Text>
+                    {subscription?.tier !== "pro" && customAffirmations.length >= 20 && (
+                      <LockIcon size={12} placement="top-right" />
+                    )}
                   </View>
                 </Pressable>
               </View>
@@ -486,6 +529,16 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
         onSelect={handleSelectFromLibrary}
         selectedCategoryId={selectedCategory || undefined}
         existingAffirmations={customAffirmations}
+      />
+
+      {/* Paywall Lock Modal */}
+      <PaywallLockModal
+        visible={showPaywallModal}
+        onClose={() => {
+          setShowPaywallModal(false);
+          setLockedFeatureName(undefined);
+        }}
+        featureName={lockedFeatureName}
       />
 
       {/* Create Button (only show in manual edit mode) */}

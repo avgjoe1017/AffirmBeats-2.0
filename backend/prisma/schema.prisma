@@ -87,7 +87,7 @@ model UserPreferences {
   userId        String   @unique
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   voice         String   @default("neutral") // neutral/confident/whisper
-  pace          String   @default("normal") // slow/normal/fast
+  pace          String   @default("normal") // slow/normal
   noise         String   @default("rain") // rain/brown/none
   pronounStyle  String   @default("you") // you/i
   intensity     String   @default("gentle") // gentle/assertive
@@ -148,7 +148,7 @@ model TtsCache {
   fileSize    Int      // File size in bytes
   affirmationsCount Int // Number of affirmations in this audio
   voiceType   String   // neutral/confident/whisper
-  pace        String   // slow/normal/fast
+  pace        String   // slow/normal
   affirmationSpacing Int // Seconds between affirmations
   createdAt   DateTime @default(now())
   lastAccessedAt DateTime @default(now()) @updatedAt

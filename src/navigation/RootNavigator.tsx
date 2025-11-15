@@ -1,10 +1,10 @@
+import React, { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { Home, Library, Settings } from "lucide-react-native";
-import { useEffect } from "react";
 
 import type { BottomTabParamList, RootStackParamList } from "@/navigation/types";
 import OnboardingScreen from "@/screens/OnboardingScreen";
@@ -17,6 +17,7 @@ import LoginModalScreen from "@/screens/LoginModalScreen";
 import CreateSessionScreen from "@/screens/CreateSessionScreen";
 import SubscriptionScreen from "@/screens/SubscriptionScreen";
 import MiniPlayer from "@/components/MiniPlayer";
+import CinematicOpener from "@/components/CinematicOpener";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/state/appStore";
 import type { GetSubscriptionResponse } from "@/shared/contracts";
@@ -28,8 +29,16 @@ import type { GetSubscriptionResponse } from "@/shared/contracts";
  */
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const RootNavigator = () => {
+  const [showOpener, setShowOpener] = React.useState(true);
+  const hasCompletedOnboarding = useAppStore((s) => s.hasCompletedOnboarding);
+
+  // Show cinematic opener only on cold start
+  if (showOpener) {
+    return <CinematicOpener onComplete={() => setShowOpener(false)} />;
+  }
+
   return (
-    <RootStack.Navigator initialRouteName="Onboarding">
+    <RootStack.Navigator initialRouteName={hasCompletedOnboarding ? "Tabs" : "Onboarding"}>
       <RootStack.Screen
         name="Onboarding"
         component={OnboardingScreen}
@@ -46,7 +55,7 @@ const RootNavigator = () => {
         options={{
           headerShown: false,
           presentation: "card",
-          animation: "slide_from_bottom",
+          animation: "fade", // Standardized: fade animation (150-250ms)
         }}
       />
       <RootStack.Screen
@@ -55,6 +64,7 @@ const RootNavigator = () => {
         options={{
           headerShown: false,
           presentation: "card",
+          animation: "fade", // Standardized: fade animation (150-250ms)
         }}
       />
       <RootStack.Screen
@@ -63,13 +73,17 @@ const RootNavigator = () => {
         options={{
           headerShown: false,
           presentation: "card",
-          animation: "slide_from_right",
+          animation: "fade", // Standardized: fade animation (150-250ms)
         }}
       />
       <RootStack.Screen
         name="LoginModalScreen"
         component={LoginModalScreen}
-        options={{ presentation: "modal", title: "Login" }}
+        options={{
+          presentation: "modal",
+          title: "Login",
+          animation: "fade", // Standardized: fade animation (150-250ms)
+        }}
       />
       <RootStack.Screen
         name="Subscription"
@@ -77,7 +91,7 @@ const RootNavigator = () => {
         options={{
           headerShown: false,
           presentation: "card",
-          animation: "slide_from_right",
+          animation: "fade", // Standardized: fade animation (150-250ms)
         }}
       />
     </RootStack.Navigator>

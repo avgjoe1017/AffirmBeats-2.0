@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable, Modal } from "react-native";
+import { View, Text, ScrollView, Pressable, Modal, Alert } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Volume2, Wind, Clock, ChevronDown, Timer, Check, X, Crown, ChevronRight } from "lucide-react-native";
-import Animated, { FadeIn } from "react-native-reanimated";
+import { Volume2, Wind, Clock, ChevronDown, Timer, Check, X, Crown, ChevronRight, RotateCcw } from "lucide-react-native";
+import Animated from "react-native-reanimated";
+import { standardFadeIn, fadeInWithDelay } from "@/lib/animations";
 import type { BottomTabScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
+import LockIcon from "@/components/LockIcon";
+import PaywallLockModal from "@/components/PaywallLockModal";
 
 type Props = BottomTabScreenProps<"SettingsTab">;
 
@@ -12,9 +15,13 @@ const SettingsScreen = ({ navigation }: Props) => {
   const preferences = useAppStore((s) => s.preferences);
   const setPreferences = useAppStore((s) => s.setPreferences);
   const subscription = useAppStore((s) => s.subscription);
+  const setHasCompletedOnboarding = useAppStore((s) => s.setHasCompletedOnboarding);
+  const hasCompletedOnboarding = useAppStore((s) => s.hasCompletedOnboarding);
 
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const [lockedFeatureName, setLockedFeatureName] = useState<string | undefined>(undefined);
 
   const updatePreference = async (updates: Partial<typeof preferences>) => {
     setPreferences({ ...preferences, ...updates });
@@ -27,38 +34,39 @@ const SettingsScreen = ({ navigation }: Props) => {
   ];
 
   const backgrounds = [
-    { value: "none" as const, label: "None", description: "Pure silence" },
-    { value: "rain" as const, label: "Rain", description: "Gentle rainfall" },
-    { value: "brown" as const, label: "Brown Noise", description: "Deep rumbling" },
-    { value: "ocean" as const, label: "Ocean Waves", description: "Coastal sounds" },
-    { value: "forest" as const, label: "Forest", description: "Nature ambience" },
-    { value: "wind" as const, label: "Wind Chimes", description: "Peaceful chimes" },
-    { value: "fire" as const, label: "Fireplace", description: "Crackling fire" },
-    { value: "thunder" as const, label: "Distant Thunder", description: "Rolling thunder" },
+    { value: "none" as const, label: "None", description: "Pure silence", isPremium: false },
+    { value: "rain" as const, label: "Rain", description: "Gentle rainfall", isPremium: false },
+    { value: "brown" as const, label: "Brown Noise", description: "Deep rumbling", isPremium: true },
+    { value: "ocean" as const, label: "Ocean Waves", description: "Coastal sounds", isPremium: true },
+    { value: "forest" as const, label: "Forest", description: "Nature ambience", isPremium: true },
+    { value: "wind" as const, label: "Wind Chimes", description: "Peaceful chimes", isPremium: true },
+    { value: "fire" as const, label: "Fireplace", description: "Crackling fire", isPremium: true },
+    { value: "thunder" as const, label: "Distant Thunder", description: "Rolling thunder", isPremium: true },
   ];
 
   const durations = [
-    { value: 180, label: "3 min" },
-    { value: 1800, label: "30 min" },
-    { value: -1, label: "Unlimited" },
+    { value: 180, label: "3 min", isPremium: false },
+    { value: 1800, label: "30 min", isPremium: true },
+    { value: -1, label: "Unlimited", isPremium: true },
   ];
 
   const spacingOptions = [3, 5, 8, 10, 15, 20, 30];
 
   const selectedVoice = voices.find(v => v.value === preferences.voice) || voices[0];
   const selectedBackground = backgrounds.find(b => b.value === preferences.noise) || backgrounds[0];
+  const isSelectedBackgroundPremium = selectedBackground?.isPremium && subscription?.tier !== "pro";
   const currentSpacing = preferences.affirmationSpacing || 8;
 
   return (
     <LinearGradient colors={["#0F0F1E", "#1A1A2E"]} style={{ flex: 1 }}>
       <ScrollView className="flex-1 px-6 pt-4" showsVerticalScrollIndicator={false}>
-        <Animated.View entering={FadeIn.duration(600)} className="mt-8 mb-8">
+        <Animated.View entering={standardFadeIn} className="mt-8 mb-8">
           <Text className="text-white text-3xl font-bold">Settings</Text>
           <Text className="text-gray-400 text-base mt-2">Personalize your experience</Text>
         </Animated.View>
 
         {/* Subscription Card */}
-        <Animated.View entering={FadeIn.delay(50).duration(500)} className="mb-6">
+        <Animated.View entering={fadeInWithDelay(50)} className="mb-6">
           <Pressable
             onPress={() => navigation.navigate("Subscription")}
             className="active:opacity-80"
@@ -106,7 +114,7 @@ const SettingsScreen = ({ navigation }: Props) => {
         </Animated.View>
 
         {/* Voice Selector */}
-        <Animated.View entering={FadeIn.delay(100).duration(500)} className="mb-6">
+        <Animated.View entering={fadeInWithDelay(100)} className="mb-6">
           <View className="flex-row items-center mb-3">
             <Volume2 size={20} color="#8B7AB8" />
             <Text className="text-white text-lg font-semibold ml-2">Voice</Text>
@@ -115,18 +123,21 @@ const SettingsScreen = ({ navigation }: Props) => {
             onPress={() => setShowVoiceModal(true)}
             className="active:opacity-80"
           >
-            <View className="bg-white/10 rounded-xl p-4 flex-row items-center justify-between border border-white/20">
+            <View className="bg-white/10 rounded-xl p-4 flex-row items-center justify-between border border-white/20 relative">
               <View className="flex-1">
                 <Text className="text-white text-base font-medium">{selectedVoice.label}</Text>
                 <Text className="text-gray-400 text-sm mt-1">{selectedVoice.description}</Text>
               </View>
               <ChevronDown size={20} color="#9E9EB0" />
+              {selectedVoice.isPremium && subscription?.tier !== "pro" && (
+                <LockIcon size={14} placement="top-right" />
+              )}
             </View>
           </Pressable>
         </Animated.View>
 
         {/* Background Selector */}
-        <Animated.View entering={FadeIn.delay(200).duration(500)} className="mb-6">
+        <Animated.View entering={fadeInWithDelay(200)} className="mb-6">
           <View className="flex-row items-center mb-3">
             <Wind size={20} color="#8B7AB8" />
             <Text className="text-white text-lg font-semibold ml-2">Background Sound</Text>
@@ -135,52 +146,69 @@ const SettingsScreen = ({ navigation }: Props) => {
             onPress={() => setShowBackgroundModal(true)}
             className="active:opacity-80"
           >
-            <View className="bg-white/10 rounded-xl p-4 flex-row items-center justify-between border border-white/20">
+            <View className="bg-white/10 rounded-xl p-4 flex-row items-center justify-between border border-white/20 relative">
               <View className="flex-1">
                 <Text className="text-white text-base font-medium">{selectedBackground.label}</Text>
                 <Text className="text-gray-400 text-sm mt-1">{selectedBackground.description}</Text>
               </View>
               <ChevronDown size={20} color="#9E9EB0" />
+              {/* Lock icon for premium sounds */}
+              {isSelectedBackgroundPremium && (
+                <LockIcon size={14} placement="top-right" />
+              )}
             </View>
           </Pressable>
         </Animated.View>
 
         {/* Duration */}
-        <Animated.View entering={FadeIn.delay(300).duration(500)} className="mb-6">
+        <Animated.View entering={fadeInWithDelay(300)} className="mb-6">
           <View className="flex-row items-center mb-2">
             <Clock size={20} color="#8B7AB8" />
             <Text className="text-white text-lg font-semibold ml-2">Session Duration</Text>
           </View>
           <Text className="text-gray-500 text-sm mb-3">Select duration</Text>
           <View className="flex-row gap-3">
-            {durations.map((duration) => (
-              <Pressable
-                key={duration.value}
-                onPress={() => updatePreference({ duration: duration.value })}
-                className="flex-1 active:opacity-80"
-              >
-                <View
-                  className={`py-3 px-4 rounded-xl border-2 ${
-                    preferences.duration === duration.value
-                      ? "bg-purple-500/20 border-purple-400"
-                      : "bg-white/5 border-white/10"
-                  }`}
+            {durations.map((duration) => {
+              const isLocked = duration.isPremium && subscription?.tier !== "pro";
+              return (
+                <Pressable
+                  key={duration.value}
+                  onPress={() => {
+                    if (isLocked) {
+                      setLockedFeatureName(`Session Duration: ${duration.label}`);
+                      setShowPaywallModal(true);
+                    } else {
+                      updatePreference({ duration: duration.value });
+                    }
+                  }}
+                  className="flex-1 active:opacity-80"
                 >
-                  <Text
-                    className={`text-center font-medium ${
-                      preferences.duration === duration.value ? "text-purple-300" : "text-gray-400"
-                    }`}
+                  <View
+                    className={`py-3 px-4 rounded-xl border-2 relative ${
+                      preferences.duration === duration.value
+                        ? "bg-purple-500/20 border-purple-400"
+                        : "bg-white/5 border-white/10"
+                    } ${isLocked ? "opacity-60" : ""}`}
                   >
-                    {duration.label}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
+                    <Text
+                      className={`text-center font-medium ${
+                        preferences.duration === duration.value ? "text-purple-300" : "text-gray-400"
+                      }`}
+                    >
+                      {duration.label}
+                    </Text>
+                    {isLocked && (
+                      <LockIcon size={12} placement="top-right" />
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         </Animated.View>
 
         {/* Affirmation Spacing */}
-        <Animated.View entering={FadeIn.delay(400).duration(500)} className="mb-6">
+        <Animated.View entering={fadeInWithDelay(400)} className="mb-6">
           <View className="flex-row items-center mb-3">
             <Timer size={20} color="#8B7AB8" />
             <Text className="text-white text-lg font-semibold ml-2">Seconds Between Affirmations</Text>
@@ -216,6 +244,54 @@ const SettingsScreen = ({ navigation }: Props) => {
           </ScrollView>
         </Animated.View>
 
+        {/* Reset Onboarding */}
+        {hasCompletedOnboarding && (
+          <Animated.View entering={fadeInWithDelay(500)} className="mb-6">
+            <View className="flex-row items-center mb-3">
+              <RotateCcw size={20} color="#8B7AB8" />
+              <Text className="text-white text-lg font-semibold ml-2">Onboarding</Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                Alert.alert(
+                  "Reset Onboarding",
+                  "This will take you back to the onboarding screen. Your preferences and sessions will be preserved.",
+                  [
+                    {
+                      text: "Cancel",
+                      style: "cancel",
+                    },
+                    {
+                      text: "Reset",
+                      style: "destructive",
+                      onPress: () => {
+                        setHasCompletedOnboarding(false);
+                        // Navigate to onboarding by resetting the root navigation stack
+                        const rootNavigation = navigation.getParent();
+                        if (rootNavigation) {
+                          rootNavigation.reset({
+                            index: 0,
+                            routes: [{ name: "Onboarding" }],
+                          });
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              className="active:opacity-80"
+            >
+              <View className="bg-white/10 rounded-xl p-4 flex-row items-center justify-between border border-white/20">
+                <View className="flex-1">
+                  <Text className="text-white text-base font-medium">Reset Onboarding</Text>
+                  <Text className="text-gray-400 text-sm mt-1">See the onboarding flow again</Text>
+                </View>
+                <ChevronRight size={20} color="#9E9EB0" />
+              </View>
+            </Pressable>
+          </Animated.View>
+        )}
+
         <View className="h-32" />
       </ScrollView>
 
@@ -242,7 +318,8 @@ const SettingsScreen = ({ navigation }: Props) => {
                   onPress={() => {
                     if (isLocked) {
                       setShowVoiceModal(false);
-                      navigation.navigate("Subscription");
+                      setLockedFeatureName(`${voice.label} Voice`);
+                      setShowPaywallModal(true);
                     } else {
                       updatePreference({ voice: voice.value });
                       setShowVoiceModal(false);
@@ -298,34 +375,63 @@ const SettingsScreen = ({ navigation }: Props) => {
               </Pressable>
             </View>
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
-              {backgrounds.map((bg, index) => (
-                <Pressable
-                  key={bg.value}
-                  onPress={() => {
-                    updatePreference({ noise: bg.value });
-                    setShowBackgroundModal(false);
-                  }}
-                  className="active:opacity-80"
-                >
-                  <View className={`py-4 px-4 rounded-xl mb-3 ${
-                    preferences.noise === bg.value ? "bg-purple-500/20" : "bg-white/5"
-                  }`}>
-                    <View className="flex-row items-center justify-between">
-                      <View className="flex-1">
-                        <Text className="text-white text-base font-medium">{bg.label}</Text>
-                        <Text className="text-gray-400 text-sm mt-1">{bg.description}</Text>
+              {backgrounds.map((bg, index) => {
+                const isLocked = bg.isPremium && subscription?.tier !== "pro";
+                return (
+                  <Pressable
+                    key={bg.value}
+                    onPress={() => {
+                      if (isLocked) {
+                        setShowBackgroundModal(false);
+                        setLockedFeatureName(`${bg.label} Background Sound`);
+                        setShowPaywallModal(true);
+                      } else {
+                        updatePreference({ noise: bg.value });
+                        setShowBackgroundModal(false);
+                      }
+                    }}
+                    className="active:opacity-80"
+                  >
+                    <View className={`py-4 px-4 rounded-xl mb-3 relative ${
+                      preferences.noise === bg.value ? "bg-purple-500/20" : "bg-white/5"
+                    } ${isLocked ? "opacity-60" : ""}`}>
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-1">
+                          <View className="flex-row items-center">
+                            <Text className="text-white text-base font-medium">{bg.label}</Text>
+                            {bg.isPremium && (
+                              <View className="ml-2 px-2 py-0.5 bg-purple-600/30 rounded-md">
+                                <Text className="text-purple-400 text-xs font-semibold">PRO</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text className="text-gray-400 text-sm mt-1">{bg.description}</Text>
+                        </View>
+                        {preferences.noise === bg.value && !isLocked && (
+                          <Check size={20} color="#A78BFA" />
+                        )}
+                        {isLocked && (
+                          <Crown size={20} color="#9E9EB0" />
+                        )}
                       </View>
-                      {preferences.noise === bg.value && (
-                        <Check size={20} color="#A78BFA" />
-                      )}
                     </View>
-                  </View>
-                </Pressable>
-              ))}
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
         </View>
       </Modal>
+
+      {/* Paywall Lock Modal */}
+      <PaywallLockModal
+        visible={showPaywallModal}
+        onClose={() => {
+          setShowPaywallModal(false);
+          setLockedFeatureName(undefined);
+        }}
+        featureName={lockedFeatureName}
+      />
     </LinearGradient>
   );
 };

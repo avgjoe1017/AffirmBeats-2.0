@@ -52,6 +52,12 @@ interface AppState {
   setHasCompletedOnboarding: (completed: boolean) => void;
   userName: string;
   setUserName: (name: string) => void;
+
+  // Usage Tracking (for Day 3 Conversion)
+  uniqueDaysUsed: string[]; // Array of date strings (YYYY-MM-DD)
+  addUsageDay: (date: string) => void;
+  hasSeenDay3Banner: boolean;
+  setHasSeenDay3Banner: (seen: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -124,6 +130,18 @@ export const useAppStore = create<AppState>()(
       setHasCompletedOnboarding: (completed) => set({ hasCompletedOnboarding: completed }),
       userName: "",
       setUserName: (name) => set({ userName: name }),
+
+      // Usage Tracking (for Day 3 Conversion)
+      uniqueDaysUsed: [],
+      addUsageDay: (date) =>
+        set((state) => {
+          if (!state.uniqueDaysUsed.includes(date)) {
+            return { uniqueDaysUsed: [...state.uniqueDaysUsed, date] };
+          }
+          return state;
+        }),
+      hasSeenDay3Banner: false,
+      setHasSeenDay3Banner: (seen) => set({ hasSeenDay3Banner: seen }),
     }),
     {
       name: "affirmation-beats-storage",
@@ -136,6 +154,8 @@ export const useAppStore = create<AppState>()(
         userName: state.userName,
         audioMixerVolumes: state.audioMixerVolumes,
         subscription: state.subscription,
+        uniqueDaysUsed: state.uniqueDaysUsed,
+        hasSeenDay3Banner: state.hasSeenDay3Banner,
       }),
     }
   )

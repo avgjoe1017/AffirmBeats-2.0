@@ -2,12 +2,16 @@ import React, { useEffect, useState, useRef } from "react";
 import { View, Text, Pressable, ScrollView, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Moon, Zap, Heart, Play, Sparkles, Plus } from "lucide-react-native";
-import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from "react-native-reanimated";
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from "react-native-reanimated";
+import { standardFadeIn, fadeInWithDelay } from "@/lib/animations";
 import * as Haptics from "expo-haptics";
 import type { BottomTabScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
 import { api } from "@/lib/api";
 import type { GetPreferencesResponse, GetSessionsResponse } from "@/shared/contracts";
+import { useTimeOfDayGreeting, getTimeBasedGoalPriority } from "@/hooks/useTimeOfDayGreeting";
+import { useDay3Conversion } from "@/hooks/useDay3Conversion";
+import Day3ConversionBanner from "@/components/Day3ConversionBanner";
 
 type Props = BottomTabScreenProps<"HomeTab">;
 
@@ -17,7 +21,8 @@ const HomeScreen = ({ navigation }: Props) => {
   const sessions = useAppStore((s) => s.sessions);
   const setSessions = useAppStore((s) => s.setSessions);
   const userName = useAppStore((s) => s.userName);
-  const [greeting, setGreeting] = useState("");
+  const { greeting, subtext } = useTimeOfDayGreeting(userName);
+  const { shouldShowBanner, dismissBanner } = useDay3Conversion();
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const hasLoadedRef = useRef(false);
@@ -69,12 +74,6 @@ const HomeScreen = ({ navigation }: Props) => {
           console.error("Failed to load sessions:", error);
         }
       });
-
-    // Set greeting based on time
-    const hour = new Date().getHours();
-    if (hour < 12) setGreeting("Good morning");
-    else if (hour < 18) setGreeting("Good afternoon");
-    else setGreeting("Good evening");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - only run once on mount
 
@@ -92,24 +91,46 @@ const HomeScreen = ({ navigation }: Props) => {
     manifest: ["#9333EA", "#F59E0B"],
   };
 
-  // Get recent sessions (up to 3 most recent)
-  const recentSessions = sessions.slice(0, 3);
+  // Get recent sessions (up to 3 most recent) with time-based reordering
+  const recentSessions = React.useMemo(() => {
+    const goalPriority = getTimeBasedGoalPriority();
+    const sortedSessions = [...sessions].sort((a, b) => {
+      const aPriority = goalPriority.indexOf(a.goal);
+      const bPriority = goalPriority.indexOf(b.goal);
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
+      }
+      // If same priority, sort by date (newest first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    return sortedSessions.slice(0, 3);
+  }, [sessions]);
 
   return (
     <LinearGradient colors={["#0F0F1E", "#1A1A2E"]} style={{ flex: 1 }}>
       <ScrollView className="flex-1 px-6 pt-4" showsVerticalScrollIndicator={false}>
-        <Animated.View entering={FadeIn.duration(600)} className="mt-8 mb-8">
+        <Animated.View entering={standardFadeIn} className="mt-8 mb-8">
           <Text className="text-gray-400 text-lg">
-            {greeting}{userName ? `, ${userName}` : ""}
+            {greeting}
           </Text>
           <Text className="text-white text-3xl font-bold mt-2">
             What do you need?
           </Text>
+          <Text className="text-gray-400 text-base mt-2">
+            {subtext}
+          </Text>
         </Animated.View>
+
+        {/* Day 3 Conversion Banner */}
+        {shouldShowBanner && (
+          <Animated.View entering={fadeInWithDelay(100)} className="mb-6">
+            <Day3ConversionBanner userName={userName} onDismiss={dismissBanner} />
+          </Animated.View>
+        )}
 
         {/* Jump Back In Section */}
         {recentSessions.length > 0 && (
-          <Animated.View entering={FadeIn.delay(200).duration(500)} className="mb-8">
+          <Animated.View entering={fadeInWithDelay(recentSessions.length > 0 ? 200 : 100)} className="mb-8">
             <View className="flex-row items-center justify-between mb-4">
               <Text className="text-white text-xl font-bold">Jump Back In</Text>
               <Pressable
@@ -180,7 +201,7 @@ const HomeScreen = ({ navigation }: Props) => {
         )}
 
         {/* Create Session Button - Elevated */}
-        <Animated.View entering={FadeIn.delay(recentSessions.length > 0 ? 350 : 200).duration(500)} className="mb-8">
+        <Animated.View entering={fadeInWithDelay(recentSessions.length > 0 ? 350 : 200)} className="mb-8">
           <Pressable
             onPress={() => navigation.navigate("CreateSession", {})}
             className="active:opacity-80"
@@ -211,7 +232,7 @@ const HomeScreen = ({ navigation }: Props) => {
         </Animated.View>
 
         {/* Choose Your Focus Section */}
-        <Animated.View entering={FadeIn.delay(recentSessions.length > 0 ? 400 : 200).duration(500)} className="mb-6">
+        <Animated.View entering={fadeInWithDelay(recentSessions.length > 0 ? 400 : 200)} className="mb-6">
           <Text className="text-gray-400 text-xs uppercase tracking-wider">
             Choose Your Focus
           </Text>
@@ -222,7 +243,7 @@ const HomeScreen = ({ navigation }: Props) => {
           return (
             <Animated.View
               key={goal.id}
-              entering={FadeIn.delay(300 + (recentSessions.length > 0 ? 400 : 200) + index * 100).duration(500)}
+              entering={fadeInWithDelay(300 + (recentSessions.length > 0 ? 400 : 200) + index * 100)}
               className="mb-4"
             >
               <Pressable

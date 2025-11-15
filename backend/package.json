@@ -10,11 +10,20 @@
     "studio": "prisma studio --port 3001 --hostname 0.0.0.0",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
-    "seed:sessions": "bun run scripts/seed-sessions.ts"
+    "seed:sessions": "bun run scripts/seed-sessions.ts",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:watch": "vitest --watch"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "prisma": "^6.17.1"
+    "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/ui": "^2.1.8",
+    "prisma": "^6.17.1",
+    "supertest": "^7.0.0",
+    "vitest": "^2.1.8"
   },
   "peerDependencies": {
     "typescript": "5.8.3"
@@ -25,8 +34,10 @@
     "@hono/zod-validator": "0.7.3",
     "@prisma/adapter-better-sqlite3": "^6.17.1",
     "@prisma/client": "^6.17.1",
+    "@sentry/node": "^8.47.0",
     "better-auth": "1.3.24",
     "hono": "4.6.0",
+    "ioredis": "^5.4.1",
     "openai": "^4.89.0",
     "zod": "4.1.11"
   }

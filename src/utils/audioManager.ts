@@ -39,6 +39,7 @@ export function useAudioManager() {
   const affirmationsVolumeRef = useRef(100);
   const binauralVolumeRef = useRef(70);
   const backgroundVolumeRef = useRef(50);
+  const backgroundPanRef = useRef(0); // Pan value: -1 (left) to 1 (right), 0 = center
 
   /**
    * Load affirmations audio from TTS endpoint
@@ -46,7 +47,7 @@ export function useAudioManager() {
   const loadAffirmations = async (
     affirmations: string[],
     voiceType: "neutral" | "confident" | "whisper",
-    pace: "slow" | "normal" | "fast",
+    pace: "slow" | "normal",
     affirmationSpacing?: number // Seconds between affirmations
   ) => {
     try {
@@ -223,6 +224,36 @@ export function useAudioManager() {
   };
 
   /**
+   * Set pan for background noise (-1 to 1, where -1 = left, 0 = center, 1 = right)
+   * 
+   * NOTE: expo-av doesn't support panning natively.
+   * This function is prepared for future migration to expo-audio or react-native-audio-api.
+   * For now, it stores the pan value but doesn't apply it to the audio.
+   * 
+   * To enable full panning support:
+   * 1. Migrate background audio to expo-audio (supports panning via StereoPannerNode)
+   * 2. Or use react-native-audio-api for Web Audio API support
+   * 
+   * @param pan - Pan value from -1 (left) to 1 (right), 0 = center
+   */
+  const setBackgroundNoisePan = async (pan: number) => {
+    // Clamp pan value to valid range
+    const clampedPan = Math.max(-1, Math.min(1, pan));
+    backgroundPanRef.current = clampedPan;
+    
+    // TODO: Apply panning when using expo-audio or react-native-audio-api
+    // For expo-av, panning is not supported, so this is a no-op
+    // When migrating to expo-audio, use:
+    // backgroundSound.setPanAsync(clampedPan);
+    
+    if (backgroundSound) {
+      // expo-av doesn't support panning, so we can't apply it
+      // This is a placeholder for future implementation
+      console.log(`[AudioManager] Pan value set to ${clampedPan} (not applied - expo-av doesn't support panning)`);
+    }
+  };
+
+  /**
    * Play all tracks
    */
   const play = async () => {
@@ -353,6 +384,7 @@ export function useAudioManager() {
     setAffirmationsVolume,
     setBinauralBeatsVolume,
     setBackgroundNoiseVolume,
+    setBackgroundNoisePan,
     
     // Cleanup
     cleanup,

@@ -38,7 +38,7 @@ export type UploadImageResponse = z.infer<typeof uploadImageResponseSchema>;
 // GET /api/preferences
 export const getPreferencesResponseSchema = z.object({
   voice: z.enum(["neutral", "confident", "whisper"]),
-  pace: z.enum(["slow", "normal", "fast"]),
+  pace: z.enum(["slow", "normal"]),
   noise: z.enum(["rain", "brown", "none", "ocean", "forest", "wind", "fire", "thunder"]),
   pronounStyle: z.enum(["you", "i"]),
   intensity: z.enum(["gentle", "assertive"]),
@@ -48,7 +48,7 @@ export type GetPreferencesResponse = z.infer<typeof getPreferencesResponseSchema
 // PATCH /api/preferences
 export const updatePreferencesRequestSchema = z.object({
   voice: z.enum(["neutral", "confident", "whisper"]).optional(),
-  pace: z.enum(["slow", "normal", "fast"]).optional(),
+  pace: z.enum(["slow", "normal"]).optional(),
   noise: z.enum(["rain", "brown", "none", "ocean", "forest", "wind", "fire", "thunder"]).optional(),
   pronounStyle: z.enum(["you", "i"]).optional(),
   intensity: z.enum(["gentle", "assertive"]).optional(),
@@ -116,7 +116,7 @@ export type GenerateTTSRequest = z.infer<typeof generateTTSRequestSchema>;
 export const generateSessionAudioRequestSchema = z.object({
   affirmations: z.array(z.string()),
   voiceType: z.enum(["neutral", "confident", "whisper"]),
-  pace: z.enum(["slow", "normal", "fast"]),
+  pace: z.enum(["slow", "normal"]),
 });
 export type GenerateSessionAudioRequest = z.infer<typeof generateSessionAudioRequestSchema>;
 

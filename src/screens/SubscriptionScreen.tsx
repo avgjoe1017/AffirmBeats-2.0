@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Check, Crown, X } from "lucide-react-native";
+import { Check, Crown, X, Sparkles } from "lucide-react-native";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
 import { api } from "../lib/api";
 import { useAppStore } from "../state/appStore";
@@ -11,7 +12,7 @@ export default function SubscriptionScreen() {
   const navigation = useNavigation();
   const subscription = useAppStore((s) => s.subscription);
   const setSubscription = useAppStore((s) => s.setSubscription);
-  const [selectedPlan, setSelectedPlan] = useState<BillingPeriod>("yearly");
+  const userName = useAppStore((s) => s.userName);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,8 +25,10 @@ export default function SubscriptionScreen() {
     setError(null);
 
     try {
+      // For one-time purchase, use "yearly" as the billing period
+      // The backend should handle one-time purchases separately
       await api.post("/api/subscription/upgrade", {
-        billingPeriod: selectedPlan,
+        billingPeriod: "yearly", // One-time purchase treated as yearly
       });
 
       // Refresh subscription status
@@ -40,188 +43,186 @@ export default function SubscriptionScreen() {
     }
   };
 
+  // Benefits to display (stacked for visual impact)
+  const benefits = [
+    "Unlimited custom sessions",
+    "All voices (Neutral, Confident, Whisper)",
+    "All background sounds (Rain, Brown Noise, Ocean, Forest, Wind, Fire, Thunder)",
+    "All frequencies (Delta, Theta, Alpha, Beta, Gamma)",
+    "Sleep sessions",
+    "Focus sessions",
+    "Calm sessions",
+    "Manifest sessions",
+    "Library builder",
+    "Save favorites",
+    "Unlimited playback length",
+    "Unlimited affirmations per session",
+  ];
+
   return (
-    <View className="flex-1 bg-[#0F0F1E]">
+    <LinearGradient colors={["#0F0F1E", "#1A1A2E"]} style={{ flex: 1 }}>
       {/* Header */}
       <View className="pt-14 px-6 pb-4 flex-row items-center justify-between">
-        <Text className="text-white text-2xl font-bold">Upgrade to Pro</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
+        <View className="flex-1" />
+        <Pressable onPress={() => navigation.goBack()} className="p-2 -mr-2">
           <X size={24} color="#F0F0F5" />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView className="flex-1 px-6" contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         {/* Current Status */}
         {isPro && (
-          <View className="mx-6 mb-6 p-4 bg-purple-900/30 border border-purple-500/50 rounded-2xl">
+          <Animated.View entering={FadeIn.duration(600)} className="mb-6 p-6 bg-purple-900/30 border border-purple-500/50 rounded-2xl">
             <View className="flex-row items-center mb-2">
-              <Crown size={20} color="#F59E0B" />
-              <Text className="text-white font-semibold text-lg ml-2">Pro Member</Text>
+              <Crown size={24} color="#F59E0B" />
+              <Text className="text-white font-semibold text-xl ml-3">Pro Member</Text>
             </View>
-            <Text className="text-gray-300 text-sm">
+            <Text className="text-gray-300 text-base">
               You&apos;re already enjoying all Pro features!
             </Text>
-          </View>
+          </Animated.View>
         )}
 
-        {/* Free vs Pro Comparison */}
-        <View className="mx-6 mb-6">
-          <Text className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-            Choose Your Plan
-          </Text>
-
-          {/* Free Tier */}
-          <View className="bg-[#1A1A2E] rounded-2xl p-6 mb-4 border border-gray-700">
-            <Text className="text-white text-xl font-bold mb-2">Free</Text>
-            <Text className="text-gray-400 text-sm mb-4">Try the basics</Text>
-
-            <View className="space-y-3">
-              <FeatureItem text="1 custom session/month" included />
-              <FeatureItem text="2 standard voices" included />
-              <FeatureItem text="All preloaded sessions" included />
-              <FeatureItem text="Unlimited AI sessions" included={false} />
-              <FeatureItem text="Premium voices (Whisper)" included={false} />
+        {/* Hero Section */}
+        {!isPro && (
+          <Animated.View entering={FadeIn.duration(600)} className="items-center mb-8">
+            <View className="bg-purple-500/20 rounded-full p-4 mb-4">
+              <Sparkles size={32} color="#9333EA" strokeWidth={2} />
             </View>
+            <Text className="text-white text-4xl font-bold text-center mb-3">
+              {userName ? `Unlock Everything Forever, ${userName}` : "Unlock Everything Forever"}
+            </Text>
+            <Text className="text-gray-400 text-lg text-center mb-2">
+              One payment. No subscription. No limits.
+            </Text>
+          </Animated.View>
+        )}
 
-            <Text className="text-white text-3xl font-bold mt-6">$0</Text>
-          </View>
-
-          {/* Pro Tier */}
-          <LinearGradient
-            colors={["#9333EA", "#F59E0B"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="rounded-2xl p-[2px]"
-          >
-            <View className="bg-[#1A1A2E] rounded-2xl p-6">
-              <View className="flex-row items-center mb-2">
-                <Crown size={24} color="#F59E0B" />
-                <Text className="text-white text-xl font-bold ml-2">Pro</Text>
-              </View>
-              <Text className="text-gray-400 text-sm mb-4">Unlock everything</Text>
-
-              <View className="space-y-3">
-                <FeatureItem text="Unlimited custom sessions" included />
-                <FeatureItem text="All premium voices" included />
-                <FeatureItem text="All preloaded sessions" included />
-                <FeatureItem text="Priority support" included />
-                <FeatureItem text="Early access to new features" included />
-              </View>
-
-              {/* Billing Toggle */}
-              <View className="mt-6 mb-4">
-                <View className="flex-row bg-black/30 rounded-xl p-1">
-                  <TouchableOpacity
-                    onPress={() => setSelectedPlan("monthly")}
-                    className={`flex-1 py-3 rounded-lg ${
-                      selectedPlan === "monthly" ? "bg-purple-600" : ""
-                    }`}
-                  >
-                    <Text
-                      className={`text-center font-semibold ${
-                        selectedPlan === "monthly" ? "text-white" : "text-gray-400"
-                      }`}
-                    >
-                      Monthly
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setSelectedPlan("yearly")}
-                    className={`flex-1 py-3 rounded-lg ${
-                      selectedPlan === "yearly" ? "bg-purple-600" : ""
-                    }`}
-                  >
-                    <Text
-                      className={`text-center font-semibold ${
-                        selectedPlan === "yearly" ? "text-white" : "text-gray-400"
-                      }`}
-                    >
-                      Yearly
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Price */}
-              <View>
-                {selectedPlan === "monthly" ? (
-                  <>
-                    <Text className="text-white text-3xl font-bold">
-                      $6.99<Text className="text-lg text-gray-400">/month</Text>
-                    </Text>
-                    <Text className="text-gray-400 text-sm mt-1">Billed monthly</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text className="text-white text-3xl font-bold">
-                      $49.99<Text className="text-lg text-gray-400">/year</Text>
-                    </Text>
-                    <Text className="text-green-400 text-sm mt-1 font-semibold">
-                      Save $34 (40% off)
-                    </Text>
-                  </>
-                )}
-              </View>
+        {/* Price Display */}
+        {!isPro && (
+          <Animated.View entering={FadeIn.delay(200).duration(600)} className="items-center mb-8">
+            <View className="flex-row items-baseline">
+              <Text className="text-white text-6xl font-bold">$9.99</Text>
             </View>
-          </LinearGradient>
-        </View>
+            <Text className="text-gray-400 text-base mt-2">
+              One-time payment • Lifetime access
+            </Text>
+          </Animated.View>
+        )}
+
+        {/* Benefits Stack */}
+        {!isPro && (
+          <Animated.View entering={FadeIn.delay(300).duration(600)} className="mb-8">
+            <Text className="text-white text-xl font-bold mb-6 text-center">
+              Everything you unlock:
+            </Text>
+            
+            <View className="bg-white/5 rounded-2xl p-6 border border-white/10">
+              {benefits.map((benefit, index) => (
+                <Animated.View
+                  key={index}
+                  entering={FadeInDown.delay(400 + index * 50).duration(400)}
+                  className="flex-row items-center mb-4 last:mb-0"
+                >
+                  <View className="w-6 h-6 rounded-full bg-purple-500/20 items-center justify-center mr-3">
+                    <Check size={16} color="#9333EA" strokeWidth={3} />
+                  </View>
+                  <Text className="text-white text-base flex-1 leading-6">
+                    {benefit}
+                  </Text>
+                </Animated.View>
+              ))}
+            </View>
+          </Animated.View>
+        )}
 
         {/* Error Message */}
         {error && (
-          <View className="mx-6 mb-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl">
-            <Text className="text-red-400 text-sm">{error}</Text>
-          </View>
+          <Animated.View entering={FadeIn.duration(300)} className="mb-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl">
+            <Text className="text-red-400 text-sm text-center">{error}</Text>
+          </Animated.View>
         )}
 
         {/* CTA Button */}
         {!isPro && (
-          <View className="mx-6">
-            <TouchableOpacity
+          <Animated.View entering={FadeIn.delay(800).duration(600)} className="mb-6">
+            <Pressable
               onPress={handleUpgrade}
               disabled={isLoading}
-              className="overflow-hidden rounded-2xl"
+              className="active:opacity-80"
             >
               <LinearGradient
                 colors={["#9333EA", "#F59E0B"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                className="py-4"
+                style={{
+                  borderRadius: 20,
+                  paddingVertical: 20,
+                  alignItems: "center",
+                  shadowColor: "#9333EA",
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 16,
+                  elevation: 12,
+                }}
               >
                 {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text className="text-white text-center text-lg font-bold">
-                    Upgrade to Pro
+                  <Text className="text-white text-xl font-bold">
+                    Get Full Access – $9.99
                   </Text>
                 )}
               </LinearGradient>
-            </TouchableOpacity>
+            </Pressable>
 
-            <Text className="text-gray-400 text-xs text-center mt-4">
-              Cancel anytime. No hidden fees.
+            <Text className="text-gray-500 text-xs text-center mt-4">
+              Secure payment • No recurring charges
             </Text>
-          </View>
+          </Animated.View>
+        )}
+
+        {/* Value Proposition */}
+        {!isPro && (
+          <Animated.View entering={FadeIn.delay(900).duration(600)} className="mb-6">
+            <View className="bg-white/5 rounded-2xl p-6 border border-white/10">
+              <View className="flex-row items-center mb-3">
+                <Crown size={20} color="#F59E0B" />
+                <Text className="text-white text-lg font-semibold ml-2">
+                  Why choose lifetime access?
+                </Text>
+              </View>
+              <View className="mb-2">
+                <Text className="text-gray-300 text-sm leading-6">
+                  • No monthly subscriptions or recurring fees
+                </Text>
+              </View>
+              <View className="mb-2">
+                <Text className="text-gray-300 text-sm leading-6">
+                  • All future features included at no extra cost
+                </Text>
+              </View>
+              <View>
+                <Text className="text-gray-300 text-sm leading-6">
+                  • One payment, unlimited access forever
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* Free Plan Info (if not Pro) */}
+        {!isPro && (
+          <Animated.View entering={FadeIn.delay(1000).duration(600)} className="mb-6">
+            <View className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <Text className="text-gray-400 text-sm text-center leading-6">
+                Free plan includes: 1 custom session/month, 2 standard voices, and all preloaded sessions
+              </Text>
+            </View>
+          </Animated.View>
         )}
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
-function FeatureItem({ text, included }: { text: string; included: boolean }) {
-  return (
-    <View className="flex-row items-center">
-      {included ? (
-        <Check size={20} color="#10B981" />
-      ) : (
-        <X size={20} color="#6B7280" />
-      )}
-      <Text
-        className={`ml-3 ${
-          included ? "text-white" : "text-gray-500 line-through"
-        }`}
-      >
-        {text}
-      </Text>
-    </View>
-  );
-}

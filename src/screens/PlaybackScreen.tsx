@@ -12,8 +12,11 @@ import { useAppStore } from "@/state/appStore";
 import type { GetSessionsResponse } from "@/shared/contracts";
 import { api, BACKEND_URL } from "@/lib/api";
 import AudioMixerModal from "@/components/AudioMixerModal";
+import PlaybackRingEffects from "@/components/PlaybackRingEffects";
 import { useAudioManager } from "@/utils/audioManager";
 import { getBinauralBeatUrl, getBackgroundSoundUrl, type BinauralCategory, type BackgroundSound } from "@/utils/audioFiles";
+import { useSpatialPanningSimple } from "@/hooks/useSpatialPanning";
+import { useAnimatedReaction, runOnJS } from "react-native-reanimated";
 
 type Props = RootStackScreenProps<"Playback">;
 type Session = GetSessionsResponse["sessions"][0];
@@ -287,6 +290,16 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
     return null;
   }, [sessions, sessionId]); // Removed currentSession from deps - use ref instead
 
+  // Spatial panning for background sounds (Endel style)
+  // Only active when background sound is playing and available
+  const hasBackgroundSound = session?.noise && session.noise !== "none";
+  const spatialPan = useSpatialPanningSimple({
+    isActive: isPlaying && hasBackgroundSound === true,
+    cycleDuration: 25000, // 25 seconds (middle of 20-30s range)
+    minPan: -0.25,
+    maxPan: 0.25,
+  });
+
   // Track the last session ID we set to prevent infinite loops
   const lastSetSessionIdRef = useRef<string | null>(null);
 
@@ -381,14 +394,19 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
         await audioManager.loadAffirmations(
           session.affirmations,
           (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
-          (session.pace || "normal") as "slow" | "normal" | "fast",
+          (session.pace || "normal") as "slow" | "normal",
           preferences.affirmationSpacing || 8
         );
 
         // Load binaural beats if category is available
+        // Prefer optimized files (3-minute AAC loops) over legacy WAV files
         if (session.binauralCategory) {
           try {
-            const binauralUrl = getBinauralBeatUrl(session.binauralCategory as BinauralCategory, BACKEND_URL);
+            const binauralUrl = getBinauralBeatUrl(
+              session.binauralCategory as BinauralCategory,
+              BACKEND_URL,
+              true // useOptimized = true (prefer optimized files)
+            );
             console.log("[PlaybackScreen] Loading binaural beats from:", binauralUrl);
             await audioManager.loadBinauralBeats(binauralUrl);
           } catch (error) {
@@ -469,6 +487,18 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
     updateVolumes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioMixerVolumes.affirmations, audioMixerVolumes.binauralBeats, audioMixerVolumes.backgroundNoise]); // audioManager is stable
+
+  // Update spatial panning for background sounds
+  // Use animated reaction to sync pan value with audio manager
+  useAnimatedReaction(
+    () => spatialPan.value,
+    (panValue) => {
+      // Update pan value in audio manager
+      // Note: This will be a no-op with expo-av, but prepares for future migration
+      runOnJS(audioManager.setBackgroundNoisePan)(panValue);
+    },
+    [spatialPan]
+  );
 
   if (!session) {
     return (
@@ -655,11 +685,19 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
 
               {/* Organic Flowing Wave Visualization */}
               <View className="w-full mt-12 mb-8 items-center">
-                <OrganicWaveVisualizer
-                  progress={progress}
-                  isPlaying={isPlaying}
-                  colors={goalColors[session.goal]}
-                />
+                <View style={{ position: "relative" }}>
+                  <OrganicWaveVisualizer
+                    progress={progress}
+                    isPlaying={isPlaying}
+                    colors={goalColors[session.goal]}
+                  />
+                  {/* Micro-illustrations overlay */}
+                  <PlaybackRingEffects
+                    isPlaying={isPlaying}
+                    size={VISUALIZATION_SIZE}
+                    color={goalColors[session.goal][1]}
+                  />
+                </View>
               </View>
 
               {/* Progress Bar */}

@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, Modal, Pressable } from "react-native";
 import { X } from "lucide-react-native";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useAppStore } from "@/state/appStore";
+import { MODAL_INITIAL_SCALE, MODAL_FINAL_SCALE, MODAL_SCALE_DURATION, MODAL_EASING, FADE_OUT_DURATION, STANDARD_EASING } from "@/lib/animations";
 
 interface AudioMixerModalProps {
   visible: boolean;
@@ -18,17 +19,64 @@ const AudioMixerModal = ({ visible, onClose, colors }: AudioMixerModalProps) => 
   const setBinauralBeatsVolume = useAppStore((s) => s.setBinauralBeatsVolume);
   const setBackgroundNoiseVolume = useAppStore((s) => s.setBackgroundNoiseVolume);
 
+  // Modal scale animation (0.97 → 1.0 over 180ms)
+  const scale = useSharedValue(MODAL_INITIAL_SCALE);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      // Animate in: scale from 0.97 to 1.0, opacity from 0 to 1
+      scale.value = withTiming(MODAL_FINAL_SCALE, {
+        duration: MODAL_SCALE_DURATION,
+        easing: MODAL_EASING,
+      });
+      opacity.value = withTiming(1, {
+        duration: MODAL_SCALE_DURATION,
+        easing: MODAL_EASING,
+      });
+    } else {
+      // Animate out: scale to 0.97, opacity to 0
+      scale.value = withTiming(MODAL_INITIAL_SCALE, {
+        duration: FADE_OUT_DURATION,
+        easing: STANDARD_EASING,
+      });
+      opacity.value = withTiming(0, {
+        duration: FADE_OUT_DURATION,
+        easing: STANDARD_EASING,
+      });
+    }
+  }, [visible, scale, opacity]);
+
+  const animatedModalStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  const animatedOverlayStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value * 0.7, // 70% opacity for overlay
+  }));
+
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
-      <View className="flex-1 bg-black/70 justify-end">
-        <Pressable className="flex-1" onPress={onClose} />
+      <Animated.View style={[{ flex: 1 }, animatedOverlayStyle]}>
+        <Pressable className="flex-1 bg-black/70 justify-end" onPress={onClose}>
+          <View />
+        </Pressable>
 
-        <Animated.View entering={FadeIn.duration(300)}>
+        <Animated.View
+          style={[
+            {
+              borderTopLeftRadius: 32,
+              borderTopRightRadius: 32,
+            },
+            animatedModalStyle,
+          ]}
+        >
           <LinearGradient
             colors={colors}
             style={{
@@ -124,7 +172,7 @@ const AudioMixerModal = ({ visible, onClose, colors }: AudioMixerModalProps) => 
             </Text>
           </LinearGradient>
         </Animated.View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 };
