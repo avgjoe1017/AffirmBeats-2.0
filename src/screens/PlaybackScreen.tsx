@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { View, Text, Pressable, ScrollView, AppState, AppStateStatus, Dimensions, Alert } from "react-native";
+import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { LinearGradient } from "expo-linear-gradient";
 import { Play, Pause, Heart, RotateCcw, Shuffle, ChevronDown, Settings, Copy, Check } from "lucide-react-native";
 import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from "react-native-reanimated";
@@ -26,6 +27,7 @@ const VISUALIZATION_SIZE = Math.min(SCREEN_WIDTH - 96, 280);
 
 // Floating Particle Component - Like dust particles in light
 const FloatingParticle = ({ index, isPlaying }: { index: number; isPlaying: boolean }) => {
+  const reduceMotion = useReduceMotion();
   const floatX = useSharedValue(0);
   const floatY = useSharedValue(0);
   const fadeAnim = useSharedValue(0);
@@ -36,6 +38,14 @@ const FloatingParticle = ({ index, isPlaying }: { index: number; isPlaying: bool
   const movePattern = (index % 3) + 1;
 
   useEffect(() => {
+    if (reduceMotion) {
+      // If Reduce Motion is enabled, keep particles static with minimal opacity
+      floatX.value = 0;
+      floatY.value = 0;
+      fadeAnim.value = isPlaying ? 0.2 : 0;
+      return;
+    }
+
     if (isPlaying) {
       // Each particle has its own unique, slow float pattern with pauses
       floatX.value = withRepeat(
@@ -70,7 +80,7 @@ const FloatingParticle = ({ index, isPlaying }: { index: number; isPlaying: bool
       fadeAnim.value = 0;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying, index]); // floatX, floatY, fadeAnim, movePattern are stable shared values
+  }, [isPlaying, index, reduceMotion]); // floatX, floatY, fadeAnim, movePattern are stable shared values
 
   const particleStyle = useAnimatedStyle(() => ({
     opacity: interpolate(fadeAnim.value, [0, 0.5, 1], [0.1, 0.4, 0.1]),
@@ -102,10 +112,18 @@ const FloatingParticle = ({ index, isPlaying }: { index: number; isPlaying: bool
 
 // Breathing Circle Component - Central focus point
 const BreathingCircle = ({ isPlaying, color }: { isPlaying: boolean; color: string }) => {
+  const reduceMotion = useReduceMotion();
   const breathe = useSharedValue(0);
   const rotate = useSharedValue(0);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // If Reduce Motion is enabled, keep circle static
+      breathe.value = 0.5; // Static at mid-opacity
+      rotate.value = 0;
+      return;
+    }
+
     if (isPlaying) {
       // Very deep, slow breathing with long pause at expansion - 10 seconds total
       breathe.value = withRepeat(
@@ -122,7 +140,7 @@ const BreathingCircle = ({ isPlaying, color }: { isPlaying: boolean; color: stri
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying]); // breathe and rotate are stable shared values
+  }, [isPlaying, reduceMotion]); // breathe and rotate are stable shared values
 
   const circleStyle = useAnimatedStyle(() => ({
     // Slower fade with pause at peak

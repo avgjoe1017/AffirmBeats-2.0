@@ -9,6 +9,7 @@ import Animated, {
   Easing,
   interpolate,
 } from "react-native-reanimated";
+import { useReduceMotion } from "@/hooks/useReduceMotion";
 
 interface PlaybackRingEffectsProps {
   isPlaying: boolean;
@@ -25,6 +26,7 @@ interface PlaybackRingEffectsProps {
  * Opacity: fade to zero
  */
 const Sparkle = ({ index, isPlaying, size }: { index: number; isPlaying: boolean; size: number }) => {
+  const reduceMotion = useReduceMotion();
   const opacity = useSharedValue(0);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -40,6 +42,14 @@ const Sparkle = ({ index, isPlaying, size }: { index: number; isPlaying: boolean
   const duration = 1500 + (index % 1500);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // If Reduce Motion is enabled, keep sparkles static with minimal opacity
+      opacity.value = isPlaying ? 0.1 : 0;
+      translateX.value = 0;
+      translateY.value = 0;
+      return;
+    }
+
     if (isPlaying) {
       opacity.value = withRepeat(
         withSequence(
@@ -66,7 +76,7 @@ const Sparkle = ({ index, isPlaying, size }: { index: number; isPlaying: boolean
       translateX.value = 0;
       translateY.value = 0;
     }
-  }, [isPlaying, driftDistance, duration, opacity, translateX, translateY]);
+  }, [isPlaying, driftDistance, duration, opacity, translateX, translateY, reduceMotion]);
 
   const sparkleStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -104,9 +114,16 @@ const Sparkle = ({ index, isPlaying, size }: { index: number; isPlaying: boolean
  * Duration: 3-4s
  */
 const RingPulse = ({ isPlaying, size, color }: { isPlaying: boolean; size: number; color: string }) => {
+  const reduceMotion = useReduceMotion();
   const scale = useSharedValue(1);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // If Reduce Motion is enabled, keep ring static
+      scale.value = 1;
+      return;
+    }
+
     if (isPlaying) {
       scale.value = withRepeat(
         withSequence(
@@ -119,7 +136,7 @@ const RingPulse = ({ isPlaying, size, color }: { isPlaying: boolean; size: numbe
     } else {
       scale.value = 1;
     }
-  }, [isPlaying, scale]);
+  }, [isPlaying, scale, reduceMotion]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -152,6 +169,7 @@ const RingPulse = ({ isPlaying, size, color }: { isPlaying: boolean; size: numbe
  * Opacity: 40% → 80% → 40%
  */
 const AmbientParticle = ({ index, isPlaying, size }: { index: number; isPlaying: boolean; size: number }) => {
+  const reduceMotion = useReduceMotion();
   const opacity = useSharedValue(0.4);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -165,6 +183,14 @@ const AmbientParticle = ({ index, isPlaying, size }: { index: number; isPlaying:
   const duration = 8000 + (index % 4000);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // If Reduce Motion is enabled, keep particles static with minimal opacity
+      opacity.value = isPlaying ? 0.3 : 0;
+      translateX.value = 0;
+      translateY.value = 0;
+      return;
+    }
+
     if (isPlaying) {
       opacity.value = withRepeat(
         withSequence(
@@ -191,7 +217,7 @@ const AmbientParticle = ({ index, isPlaying, size }: { index: number; isPlaying:
       translateX.value = 0;
       translateY.value = 0;
     }
-  }, [isPlaying, moveDistance, duration, opacity, translateX, translateY]);
+  }, [isPlaying, moveDistance, duration, opacity, translateX, translateY, reduceMotion]);
 
   const particleStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

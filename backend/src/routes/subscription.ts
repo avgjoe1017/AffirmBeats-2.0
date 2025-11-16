@@ -7,16 +7,19 @@ import {
   upgradeSubscriptionRequestSchema,
   type UpgradeSubscriptionResponse,
   type CancelSubscriptionResponse,
+  verifyPurchaseRequestSchema,
+  type VerifyPurchaseResponse,
 } from "@/shared/contracts";
 import { checkAndResetIfNeeded } from "../utils/subscriptionReset";
+import { logger } from "../lib/logger";
 
 const subscription = new Hono<AppType>();
 
 // Subscription limits
 const SUBSCRIPTION_LIMITS = {
   free: {
-    customSessionsPerMonth: 1,
-    voices: ["neutral", "confident"], // Standard voices
+    customSessionsPerMonth: 3, // Updated from 1 to 3 per PRICING_TIERS.md
+    voices: ["neutral", "confident", "whisper"], // All voices available in free tier
   },
   pro: {
     customSessionsPerMonth: Infinity,
@@ -67,7 +70,7 @@ subscription.get("/", async (c) => {
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
       customSessionsUsedThisMonth: 0,
-      customSessionsLimit: 1,
+      customSessionsLimit: 3, // Updated from 1 to 3
       canCreateCustomSession: true,
     } satisfies GetSubscriptionResponse, 200);
   }
@@ -158,6 +161,88 @@ subscription.post("/cancel", async (c) => {
     message: "Subscription will be cancelled at the end of the current billing period",
   } satisfies CancelSubscriptionResponse, 200);
 });
+
+// POST /api/subscription/verify-purchase - Verify IAP purchase and upgrade to Pro
+subscription.post(
+  "/verify-purchase",
+  zValidator("json", verifyPurchaseRequestSchema),
+  async (c) => {
+    const session = c.get("session");
+    if (!session) {
+      return c.json({ 
+        success: false, 
+        message: "Authentication required" 
+      } satisfies VerifyPurchaseResponse, 401);
+    }
+
+    const { productId, platform } = c.req.valid("json");
+
+    // Verify product ID matches expected Pro products (monthly or annual)
+    const validProductIds = ["com.affirmbeats.pro.monthly", "com.affirmbeats.pro.annual"];
+    if (!validProductIds.includes(productId)) {
+      logger.warn("Invalid product ID for purchase verification", { 
+        userId: session.userId, 
+        productId 
+      });
+      return c.json({ 
+        success: false, 
+        message: "Invalid product ID" 
+      } satisfies VerifyPurchaseResponse, 400);
+    }
+
+    // Determine billing period from product ID
+    const billingPeriod: "monthly" | "yearly" = productId.includes("annual") ? "yearly" : "monthly";
+
+    logger.info("Verifying purchase", { 
+      userId: session.userId, 
+      productId, 
+      billingPeriod,
+      platform 
+    });
+
+    try {
+      await getOrCreateSubscription(session.userId);
+
+      // Update to Pro subscription
+      const now = new Date();
+      const periodEnd = new Date(now);
+      if (billingPeriod === "monthly") {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+      } else {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      }
+
+      await db.userSubscription.update({
+        where: { userId: session.userId },
+        data: {
+          tier: "pro",
+          status: "active",
+          billingPeriod,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+          cancelAtPeriodEnd: false,
+        },
+      });
+
+      logger.info("Purchase verified and subscription upgraded", { 
+        userId: session.userId 
+      });
+
+      return c.json({
+        success: true,
+        message: "Purchase verified successfully. You now have Pro access!",
+      } satisfies VerifyPurchaseResponse, 200);
+    } catch (error) {
+      logger.error("Failed to verify purchase", error, { 
+        userId: session.userId 
+      });
+      return c.json({ 
+        success: false, 
+        message: "Failed to verify purchase. Please try again." 
+      } satisfies VerifyPurchaseResponse, 500);
+    }
+  }
+);
 
 // POST /api/subscription/track-usage - Internal endpoint to track custom session creation
 subscription.post("/track-usage", async (c) => {

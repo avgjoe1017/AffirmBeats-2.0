@@ -219,3 +219,17 @@ export const cancelSubscriptionResponseSchema = z.object({
 });
 export type CancelSubscriptionResponse = z.infer<typeof cancelSubscriptionResponseSchema>;
 
+// POST /api/subscription/verify-purchase
+export const verifyPurchaseRequestSchema = z.object({
+  productId: z.string(),
+  platform: z.enum(["ios", "android", "web"]),
+  receipt?: z.string().optional(), // Receipt data for verification
+  transactionId?: z.string().optional(), // Transaction ID
+});
+export type VerifyPurchaseRequest = z.infer<typeof verifyPurchaseRequestSchema>;
+export const verifyPurchaseResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+export type VerifyPurchaseResponse = z.infer<typeof verifyPurchaseResponseSchema>;
+

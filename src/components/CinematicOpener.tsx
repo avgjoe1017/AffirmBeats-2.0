@@ -10,6 +10,7 @@ import Animated, {
   Easing,
   runOnJS,
 } from "react-native-reanimated";
+import { useReduceMotion } from "@/hooks/useReduceMotion";
 
 interface CinematicOpenerProps {
   onComplete: () => void;
@@ -27,11 +28,24 @@ interface CinematicOpenerProps {
  * Total duration: ~1.0-1.5 seconds
  */
 const CinematicOpener: React.FC<CinematicOpenerProps> = ({ onComplete }) => {
+  const reduceMotion = useReduceMotion();
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
   const glowOpacity = useSharedValue(0);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // If Reduce Motion is enabled, skip animations and complete immediately
+      opacity.value = 1;
+      scale.value = 1;
+      glowOpacity.value = 0;
+      // Complete after a brief moment to show the logo
+      const timer = setTimeout(() => {
+        onComplete();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+
     // Logo fade-in: 0% → 100% over 450ms
     opacity.value = withTiming(1, {
       duration: 450,
@@ -67,7 +81,7 @@ const CinematicOpener: React.FC<CinematicOpenerProps> = ({ onComplete }) => {
     }, 1000);
 
     return () => clearTimeout(fadeOutTimer);
-  }, [opacity, scale, glowOpacity, onComplete]);
+  }, [opacity, scale, glowOpacity, onComplete, reduceMotion]);
 
   const logoStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
