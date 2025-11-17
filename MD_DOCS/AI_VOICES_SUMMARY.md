@@ -1,10 +1,12 @@
 # AI Voices Quick Summary
 
+**Last Updated:** 2025-11-16 - Updated default voices to Mira and Archer
+
 ## Current Status: ✅ 3 Voices Configured
 
 ### Free Voices (2)
-1. **Neutral** (Rachel) - Calm and balanced tone
-2. **Confident** (Arnold) - Strong and empowering
+1. **Mira (F)** - Meditation, Calming Down, Relaxing
+2. **Archer (M)** - Guided Meditation & Narration
 
 ### Premium Voices (1)
 3. **Whisper** (Bella) - Soft and soothing (requires Pro subscription)

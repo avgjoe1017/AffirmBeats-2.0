@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice & Audio Settings - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: #1a1a2e;
+            border-right: 1px solid #2a2a3e;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            color: #8b7ab8;
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #9e9eb0;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            background: #2a2a3e;
+            color: #e0e0e0;
+        }
+        .nav-item.active {
+            background: #8b7ab8;
+            color: white;
+        }
+        .nav-item .icon {
+            font-size: 20px;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+        h1 { color: #8b7ab8; margin-bottom: 10px; }
+        .subtitle { color: #9e9eb0; margin-bottom: 20px; }
+        .section {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            color: #8b7ab8;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .voice-card {
+            background: #0f0f1e;
+            border: 1px solid #2a2a3e;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .voice-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .voice-name { color: #8b7ab8; font-weight: 600; }
+        .tier-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .tier-free { background: #2a2a3e; color: #9e9eb0; }
+        .tier-pro { background: #f59e0b; color: #000; }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #9e9eb0;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .form-group input {
+            width: 100%;
+            background: #0f0f1e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 8px;
+            border-radius: 6px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .btn {
+            background: #8b7ab8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover { background: #6b5a98; }
+        .binaural-item {
+            padding: 10px;
+            background: #0f0f1e;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Admin Panel</h2>
+            <a href="/admin" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="/admin/affirmations" class="nav-item">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="/admin/users" class="nav-item">
+                <span class="icon">👥</span>
+                <span>Users</span>
+            </a>
+            <a href="/admin/logs" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Logs</span>
+            </a>
+            <a href="/admin/templates" class="nav-item">
+                <span class="icon">🎨</span>
+                <span>Templates</span>
+            </a>
+            <a href="/admin/default-sessions" class="nav-item">
+                <span class="icon">🎯</span>
+                <span>Defaults</span>
+            </a>
+            <a href="/admin/voice-settings" class="nav-item active">
+                <span class="icon">🎤</span>
+                <span>Voice</span>
+            </a>
+            <a href="/admin/config" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>Config</span>
+            </a>
+        </div>
+
+        <div class="main-content">
+            <div style="margin-bottom: 20px;">
+                <h1>🎤 Voice & Audio Settings</h1>
+                <p class="subtitle">Configure voices and audio parameters</p>
+            </div>
+
+            <div class="section">
+            <h2 class="section-title">🗣️ Voices</h2>
+            <div id="voicesList"></div>
+        </div>
+
+            <div class="section">
+                <h2 class="section-title">🎛️ Binaural Frequencies</h2>
+                <div id="binauralList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/config`);
+                const data = await response.json();
+                displayVoices(data.voices);
+                displayBinaural(data.binaural);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function displayVoices(voices) {
+            const list = document.getElementById('voicesList');
+            
+            // Map voice keys to display names
+            const voiceDisplayNames = {
+                neutral: 'Mira (F)',
+                confident: 'Archer (M)',
+                premium1: 'James (M)',
+                premium2: 'Priyanka (F)',
+                premium3: 'Rhea (F)',
+                premium4: 'Chuck (M)',
+                premium5: 'Zara (F)',
+                premium6: 'Almee (F)',
+                premium7: 'Kristen (F)',
+                premium8: 'Drew (M)'
+            };
+            
+            list.innerHTML = Object.entries(voices).map(([key, voice]) => {
+                const displayName = voiceDisplayNames[key] || key.charAt(0).toUpperCase() + key.slice(1);
+                return `
+                <div class="voice-card">
+                    <div class="voice-header">
+                        <div>
+                            <span class="voice-name">${displayName}</span>
+                            <span class="tier-badge tier-${voice.tier}">${voice.tier.toUpperCase()}</span>
+                        </div>
+                        <button class="btn" onclick="testVoice('${key}', '${voice.voiceId}')">🧪 Test</button>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>ElevenLabs Voice ID</label>
+                            <input type="text" value="${voice.voiceId}" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Stability</label>
+                            <input type="number" value="${voice.stability}" step="0.01" min="0" max="1" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Similarity</label>
+                            <input type="number" value="${voice.similarity}" step="0.01" min="0" max="1" readonly>
+                        </div>
+                    </div>
+                    <div style="color: #9e9eb0; font-size: 12px; margin-top: 10px;">
+                        ⚠️ Voice settings are read-only. Edit in backend/src/routes/admin.ts
+                    </div>
+                </div>
+            `;
+            }).join('');
+        }
+
+        function displayBinaural(binaural) {
+            const list = document.getElementById('binauralList');
+            
+            list.innerHTML = Object.entries(binaural).map(([key, freq]) => `
+                <div class="binaural-item">
+                    <strong style="color: #8b7ab8;">${key.charAt(0).toUpperCase() + key.slice(1)}</strong>
+                    <div style="color: #9e9eb0; margin-top: 5px;">
+                        ${freq.hz} Hz - ${freq.description}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function testVoice(voiceKey, voiceId) {
+            // Map voice keys to display names for the prompt
+            const voiceDisplayNames = {
+                neutral: 'Mira (F)',
+                confident: 'Archer (M)',
+                premium1: 'James (M)',
+                premium2: 'Priyanka (F)',
+                premium3: 'Rhea (F)',
+                premium4: 'Chuck (M)',
+                premium5: 'Zara (F)',
+                premium6: 'Almee (F)',
+                premium7: 'Kristen (F)',
+                premium8: 'Drew (M)'
+            };
+            const voiceDisplayName = voiceDisplayNames[voiceKey] || voiceKey.charAt(0).toUpperCase() + voiceKey.slice(1);
+            const testText = prompt(`Enter text to test with ${voiceDisplayName} voice:`, "I am calm, centered, and at peace.");
+            if (!testText) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/voice/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voice: voiceKey, text: testText }),
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to generate audio');
+                }
+
+                const data = await response.json();
+                
+                // Create audio element and play
+                const audio = new Audio(`data:${data.audioFormat};base64,${data.audioBase64}`);
+                audio.play().catch(err => {
+                    alert(`Error playing audio: ${err.message}`);
+                });
+
+                // Show success message
+                alert(`✅ Audio generated successfully!\n\nVoice: ${voiceDisplayName}\nText: "${testText}"\nSize: ${(data.size / 1024).toFixed(2)} KB\n\nAudio is now playing...`);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        loadConfig();
+    </script>
+</body>
+</html>
+

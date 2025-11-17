@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Default Sessions - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: #1a1a2e;
+            border-right: 1px solid #2a2a3e;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            color: #8b7ab8;
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #9e9eb0;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            background: #2a2a3e;
+            color: #e0e0e0;
+        }
+        .nav-item.active {
+            background: #8b7ab8;
+            color: white;
+        }
+        .nav-item .icon {
+            font-size: 20px;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+        h1 { color: #8b7ab8; margin-bottom: 10px; }
+        .subtitle { color: #9e9eb0; margin-bottom: 20px; }
+        .session-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .session-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+        .session-title { color: #8b7ab8; font-size: 18px; font-weight: 600; }
+        .session-meta {
+            display: flex;
+            gap: 15px;
+            color: #9e9eb0;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        .affirmations-list {
+            background: #0f0f1e;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .affirmation-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .affirmation-item:last-child { border-bottom: none; }
+        .btn {
+            background: #8b7ab8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover { background: #6b5a98; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #9e9eb0;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            background: #0f0f1e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .affirmation-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .affirmation-input input {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Admin Panel</h2>
+            <a href="/admin" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="/admin/affirmations" class="nav-item">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="/admin/users" class="nav-item">
+                <span class="icon">👥</span>
+                <span>Users</span>
+            </a>
+            <a href="/admin/logs" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Logs</span>
+            </a>
+            <a href="/admin/templates" class="nav-item">
+                <span class="icon">🎨</span>
+                <span>Templates</span>
+            </a>
+            <a href="/admin/default-sessions" class="nav-item active">
+                <span class="icon">🎯</span>
+                <span>Defaults</span>
+            </a>
+            <a href="/admin/voice-settings" class="nav-item">
+                <span class="icon">🎤</span>
+                <span>Voice</span>
+            </a>
+            <a href="/admin/config" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>Config</span>
+            </a>
+        </div>
+
+        <div class="main-content">
+            <div style="margin-bottom: 20px;">
+                <h1>🎯 Default Sessions</h1>
+                <p class="subtitle">Edit default sessions available to all users</p>
+            </div>
+
+            <div style="background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 15px; margin-bottom: 20px; color: #9e9eb0;">
+                ⚠️ These are read-only in the current implementation. Default sessions are defined in code (sessions.ts). To modify them, edit the DEFAULT_SESSIONS array in the backend.
+            </div>
+
+            <div id="sessionsList"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function loadSessions() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/default-sessions`);
+                const data = await response.json();
+                displaySessions(data.sessions);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function displaySessions(sessions) {
+            const list = document.getElementById('sessionsList');
+            
+            if (sessions.length === 0) {
+                list.innerHTML = '<div style="text-align: center; padding: 40px; color: #9e9eb0;">No default sessions found</div>';
+                return;
+            }
+
+            list.innerHTML = sessions.map(s => `
+                <div class="session-card">
+                    <div class="session-header">
+                        <div>
+                            <div class="session-title">${s.title} (${s.goal.toUpperCase()})</div>
+                            <div class="session-meta">
+                                <span>${Math.floor(s.lengthSec / 60)} minutes</span>
+                                <span>• ${s.affirmations.length} affirmations</span>
+                                <span>• Voice: ${s.voiceId}</span>
+                                <span>• Pace: ${s.pace}</span>
+                                <span>• Background: ${s.noise}</span>
+                                ${s.binauralCategory ? `<span>• Binaural: ${s.binauralCategory} (${s.binauralHz} Hz)</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="affirmations-list">
+                        <strong style="color: #8b7ab8; margin-bottom: 10px; display: block;">Affirmations:</strong>
+                        ${s.affirmations.map((aff, idx) => `
+                            <div class="affirmation-item">
+                                <span style="color: #9e9eb0; margin-right: 10px;">${idx + 1}.</span>
+                                <span>${aff}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        loadSessions();
+    </script>
+</body>
+</html>
+

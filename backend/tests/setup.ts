@@ -1,3 +1,19 @@
+import { beforeAll, afterAll } from "vitest";
+import { PrismaClient } from "@prisma/client";
+
+// Use test database when provided
+export const prisma = new PrismaClient({
+  datasourceUrl: process.env.TEST_DATABASE_URL || process.env.DATABASE_URL,
+});
+
+beforeAll(async () => {
+  process.env.NODE_ENV = "test";
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
 /**
  * Test Setup File
  * 

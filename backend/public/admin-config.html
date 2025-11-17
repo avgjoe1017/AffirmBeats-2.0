@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Configuration - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: #1a1a2e;
+            border-right: 1px solid #2a2a3e;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            color: #8b7ab8;
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #9e9eb0;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            background: #2a2a3e;
+            color: #e0e0e0;
+        }
+        .nav-item.active {
+            background: #8b7ab8;
+            color: white;
+        }
+        .nav-item .icon {
+            font-size: 20px;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+        h1 { color: #8b7ab8; margin-bottom: 10px; }
+        .subtitle { color: #9e9eb0; margin-bottom: 20px; }
+        .section {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            color: #8b7ab8;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #9e9eb0;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            background: #0f0f1e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .info-text {
+            color: #9e9eb0;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .threshold-indicator {
+            margin-top: 5px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .threshold-indicator.safe {
+            background: #1e3f2e;
+            color: #4ade80;
+            border: 1px solid #4ade80;
+        }
+        .threshold-indicator.caution {
+            background: #3f2e1e;
+            color: #fbbf24;
+            border: 1px solid #fbbf24;
+        }
+        .threshold-indicator.danger {
+            background: #3f1e1e;
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
+        .btn {
+            background: #8b7ab8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover { background: #6b5a98; }
+        .btn-secondary {
+            background: #2a2a3e;
+            color: #8b7ab8;
+        }
+        .alert {
+            background: #3f2e1e;
+            border: 1px solid #fbbf24;
+            color: #fbbf24;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Admin Panel</h2>
+            <a href="/admin" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="/admin/affirmations" class="nav-item">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="/admin/users" class="nav-item">
+                <span class="icon">👥</span>
+                <span>Users</span>
+            </a>
+            <a href="/admin/logs" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Logs</span>
+            </a>
+            <a href="/admin/templates" class="nav-item">
+                <span class="icon">🎨</span>
+                <span>Templates</span>
+            </a>
+            <a href="/admin/default-sessions" class="nav-item">
+                <span class="icon">🎯</span>
+                <span>Defaults</span>
+            </a>
+            <a href="/admin/voice-settings" class="nav-item">
+                <span class="icon">🎤</span>
+                <span>Voice</span>
+            </a>
+            <a href="/admin/config" class="nav-item active">
+                <span class="icon">⚙️</span>
+                <span>Config</span>
+            </a>
+        </div>
+
+        <div class="main-content">
+            <div style="margin-bottom: 20px;">
+                <h1>⚙️ System Configuration</h1>
+                <p class="subtitle">Configure system settings and thresholds</p>
+            </div>
+
+            <div class="alert" style="background: #1e3f2e; border-color: #4ade80; color: #4ade80;">
+                ✅ Configuration changes are now persisted to config.json file.
+            </div>
+
+            <form id="configForm" onsubmit="saveConfig(event)">
+            <div class="section">
+                <h2 class="section-title">🎯 Matching Thresholds</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Exact Match Confidence</label>
+                        <input type="number" id="exactThreshold" step="0.01" min="0" max="1" required oninput="updateThresholdIndicator('exactThreshold', 0.65, 0.85)">
+                        <div id="exactThresholdIndicator" class="threshold-indicator"></div>
+                        <div class="info-text">Lower = more matches, higher = better quality</div>
+                        <div class="info-text" style="font-size: 0.85em; color: #9e9eb0; margin-top: 4px;">
+                            <span style="color: #4ade80;">●</span> Safe: 0.65-0.85 | 
+                            <span style="color: #fbbf24;">●</span> Caution: 0.50-0.65 or 0.85-0.95 | 
+                            <span style="color: #ef4444;">●</span> Not recommended: &lt;0.50 or &gt;0.95
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Pooled Match Confidence</label>
+                        <input type="number" id="pooledThreshold" step="0.01" min="0" max="1" required oninput="updateThresholdIndicator('pooledThreshold', 0.60, 0.80)">
+                        <div id="pooledThresholdIndicator" class="threshold-indicator"></div>
+                        <div class="info-text">Confidence threshold for pooled affirmations</div>
+                        <div class="info-text" style="font-size: 0.85em; color: #9e9eb0; margin-top: 4px;">
+                            <span style="color: #4ade80;">●</span> Safe: 0.60-0.80 | 
+                            <span style="color: #fbbf24;">●</span> Caution: 0.50-0.60 or 0.80-0.90 | 
+                            <span style="color: #ef4444;">●</span> Not recommended: &lt;0.50 or &gt;0.90
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 class="section-title">💰 Cost Limits</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Daily Cost Alert ($)</label>
+                        <input type="number" id="dailyAlert" step="0.01" min="0" required>
+                        <div class="info-text">Alert when daily costs exceed this amount</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Monthly Budget ($)</label>
+                        <input type="number" id="monthlyBudget" step="0.01" min="0" required>
+                        <div class="info-text">Maximum monthly spending limit</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Max Cost Per Session ($)</label>
+                    <input type="number" id="maxCostPerSession" step="0.01" min="0" required>
+                    <div class="info-text">Maximum allowed cost for a single session</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 class="section-title">🔄 Generation Strategy</h2>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="alwaysGenerateFirst" style="width: auto; margin-right: 8px;">
+                        Always generate first session (skip matching)
+                    </label>
+                    <div class="info-text">If enabled, first session always uses AI generation</div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Pro User Generation Rate</label>
+                        <input type="number" id="proGenRate" step="0.01" min="0" max="1" required>
+                        <div class="info-text">Percentage of pro user sessions that use AI generation</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Free User Generation Rate</label>
+                        <input type="number" id="freeGenRate" step="0.01" min="0" max="1" required>
+                        <div class="info-text">Percentage of free user sessions that use AI generation</div>
+                    </div>
+                </div>
+            </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary" onclick="resetConfig()">Reset to Defaults</button>
+                    <button type="button" class="btn btn-secondary" onclick="testConfiguration()">🧪 Test Configuration</button>
+                    <button type="submit" class="btn">Save Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/config`);
+                const data = await response.json();
+                
+                document.getElementById('exactThreshold').value = data.matching.exactMatchThreshold;
+                document.getElementById('pooledThreshold').value = data.matching.pooledMatchThreshold;
+                document.getElementById('dailyAlert').value = data.costs.dailyAlert;
+                document.getElementById('monthlyBudget').value = data.costs.monthlyBudget;
+                document.getElementById('maxCostPerSession').value = data.costs.maxCostPerSession;
+                document.getElementById('alwaysGenerateFirst').checked = data.generation.alwaysGenerateFirst;
+                document.getElementById('proGenRate').value = data.generation.proUserGenerationRate;
+                document.getElementById('freeGenRate').value = data.generation.freeUserGenerationRate;
+            } catch (err) {
+                alert(`Error loading config: ${err.message}`);
+            }
+        }
+
+        async function saveConfig(e) {
+            e.preventDefault();
+            
+            const config = {
+                matching: {
+                    exactMatchThreshold: parseFloat(document.getElementById('exactThreshold').value),
+                    pooledMatchThreshold: parseFloat(document.getElementById('pooledThreshold').value),
+                },
+                costs: {
+                    dailyAlert: parseFloat(document.getElementById('dailyAlert').value),
+                    monthlyBudget: parseFloat(document.getElementById('monthlyBudget').value),
+                    maxCostPerSession: parseFloat(document.getElementById('maxCostPerSession').value),
+                },
+                generation: {
+                    alwaysGenerateFirst: document.getElementById('alwaysGenerateFirst').checked,
+                    proUserGenerationRate: parseFloat(document.getElementById('proGenRate').value),
+                    freeUserGenerationRate: parseFloat(document.getElementById('freeGenRate').value),
+                },
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/config`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config),
+                });
+
+                if (!response.ok) throw new Error('Failed to save config');
+                
+                const result = await response.json();
+                alert('✅ Configuration saved successfully!');
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function updateThresholdIndicator(inputId, safeMin, safeMax) {
+            const input = document.getElementById(inputId);
+            const indicator = document.getElementById(inputId + 'Indicator');
+            const value = parseFloat(input.value);
+            
+            if (isNaN(value)) {
+                indicator.textContent = '';
+                indicator.className = 'threshold-indicator';
+                return;
+            }
+            
+            let status, message, color;
+            if (value >= safeMin && value <= safeMax) {
+                status = 'safe';
+                message = '✅ Safe range';
+                color = 'safe';
+            } else if ((value >= safeMin - 0.15 && value < safeMin) || (value > safeMax && value <= safeMax + 0.10)) {
+                status = 'caution';
+                message = '⚠️ Caution: Outside recommended range';
+                color = 'caution';
+            } else {
+                status = 'danger';
+                message = '🚨 Not recommended: May cause issues';
+                color = 'danger';
+            }
+            
+            indicator.textContent = message;
+            indicator.className = `threshold-indicator ${color}`;
+        }
+
+        function resetConfig() {
+            if (!confirm('Reset all configuration to defaults?')) return;
+            loadConfig();
+            // Update indicators after reset
+            setTimeout(() => {
+                updateThresholdIndicator('exactThreshold', 0.65, 0.85);
+                updateThresholdIndicator('pooledThreshold', 0.60, 0.80);
+            }, 100);
+        }
+
+        async function testConfiguration() {
+            const exactThreshold = parseFloat(document.getElementById('exactThreshold').value);
+            const pooledThreshold = parseFloat(document.getElementById('pooledThreshold').value);
+            
+            if (confirm(`Test configuration with:\n- Exact Match: ${exactThreshold}\n- Pooled Match: ${pooledThreshold}\n\nThis will simulate the last 100 generations with these settings.`)) {
+                alert('⚠️ Test configuration feature coming soon. For now, monitor the dashboard after saving to see the impact.');
+            }
+        }
+
+        loadConfig();
+        // Initialize indicators after load
+        setTimeout(() => {
+            updateThresholdIndicator('exactThreshold', 0.65, 0.85);
+            updateThresholdIndicator('pooledThreshold', 0.60, 0.80);
+        }, 500);
+    </script>
+</body>
+</html>
+

@@ -35,6 +35,17 @@ export function useAudioManager() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  
+  // Playlist state
+  const [playlist, setPlaylist] = useState<Array<{
+    id: string;
+    text: string;
+    audioUrl: string | null;
+    durationMs: number;
+    silenceAfterMs: number;
+  }>>([]);
+  const [currentAffirmationIndex, setCurrentAffirmationIndex] = useState(0);
+  const playlistSoundsRef = useRef<Map<string, Audio.Sound>>(new Map());
 
   const affirmationsVolumeRef = useRef(100);
   const binauralVolumeRef = useRef(70);
@@ -42,13 +53,79 @@ export function useAudioManager() {
   const backgroundPanRef = useRef(0); // Pan value: -1 (left) to 1 (right), 0 = center
 
   /**
-   * Load affirmations audio from TTS endpoint
+   * Load affirmation playlist from session
+   * NEW: Uses individual affirmation audio files
+   */
+  const loadAffirmationPlaylist = async (sessionId: string) => {
+    try {
+      // Clean up existing sounds
+      playlistSoundsRef.current.forEach((sound) => {
+        sound.unloadAsync().catch(console.error);
+      });
+      playlistSoundsRef.current.clear();
+      
+      if (affirmationsSound) {
+        await affirmationsSound.unloadAsync();
+        setAffirmationsSound(null);
+      }
+
+      // Fetch playlist from backend
+      const response = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/playlist`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch playlist: ${response.status}`);
+      }
+
+      const playlistData = await response.json();
+      
+      if (!playlistData.affirmations || playlistData.affirmations.length === 0) {
+        throw new Error("Playlist is empty");
+      }
+
+      // Set playlist and calculate total duration
+      setPlaylist(playlistData.affirmations);
+      setDuration(playlistData.totalDurationMs / 1000);
+      setCurrentAffirmationIndex(0);
+
+      // Preload all affirmation audio files
+      const loadPromises = playlistData.affirmations.map(async (aff: {
+        id: string;
+        audioUrl: string | null;
+      }) => {
+        if (!aff.audioUrl) {
+          console.warn(`[AudioManager] No audio URL for affirmation ${aff.id}`);
+          return;
+        }
+
+        try {
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: aff.audioUrl },
+            { shouldPlay: false }
+          );
+          playlistSoundsRef.current.set(aff.id, sound);
+        } catch (error) {
+          console.error(`[AudioManager] Failed to load affirmation ${aff.id}:`, error);
+        }
+      });
+
+      await Promise.all(loadPromises);
+      console.log(`[AudioManager] Loaded ${playlistSoundsRef.current.size} affirmation audio files`);
+    } catch (error) {
+      console.error("[AudioManager] Failed to load affirmation playlist:", error);
+      throw error;
+    }
+  };
+
+  /**
+   * Load affirmations audio from TTS endpoint (LEGACY - for backward compatibility)
+   * @deprecated Use loadAffirmationPlaylist instead
    */
   const loadAffirmations = async (
     affirmations: string[],
     voiceType: "neutral" | "confident" | "whisper",
     pace: "slow" | "normal",
-    affirmationSpacing?: number // Seconds between affirmations
+    affirmationSpacing?: number, // Seconds between affirmations
+    goal?: "sleep" | "focus" | "calm" | "manifest" // Goal for voice configuration
   ) => {
     try {
       // Clean up existing sound
@@ -66,6 +143,7 @@ export function useAudioManager() {
           voiceType,
           pace,
           affirmationSpacing,
+          goal, // Include goal for goal-based voice configuration
         }),
       });
 
@@ -151,7 +229,7 @@ export function useAudioManager() {
 
       const { sound } = await Audio.Sound.createAsync(
         { uri: fileUri },
-        { shouldPlay: false, isLooping: true }
+        { shouldPlay: false, isLooping: true, volume: 0 } // Start at volume 0 for fade-in
       );
 
       setBinauralSound(sound);
@@ -182,14 +260,16 @@ export function useAudioManager() {
 
       const { sound } = await Audio.Sound.createAsync(
         { uri: fileUri },
-        { shouldPlay: false, isLooping: true }
+        { shouldPlay: false, isLooping: true, volume: 0 } // Start at volume 0 for fade-in
       );
 
       setBackgroundSound(sound);
       return sound;
     } catch (error) {
-      console.error("[AudioManager] Failed to load background noise:", error);
-      throw error;
+      console.error("[AudioManager] Failed to load background noise:", error, { fileUri });
+      // Don't throw - allow playback to continue without background sound
+      console.warn("[AudioManager] Continuing without background noise - URL may be invalid or file missing");
+      return null;
     }
   };
 
@@ -254,20 +334,111 @@ export function useAudioManager() {
   };
 
   /**
-   * Play all tracks
+   * Play next affirmation in playlist
+   */
+  const playNextAffirmation = async (index: number) => {
+    if (index >= playlist.length) {
+      // Playlist complete
+      setIsPlaying(false);
+      setCurrentTime(0);
+      return;
+    }
+
+    const affirmation = playlist[index];
+    setCurrentAffirmationIndex(index);
+
+    if (!affirmation.audioUrl) {
+      console.warn(`[AudioManager] No audio URL for affirmation at index ${index}, skipping`);
+      // Skip to next after silence
+      setTimeout(() => {
+        playNextAffirmation(index + 1);
+      }, affirmation.silenceAfterMs);
+      return;
+    }
+
+    const sound = playlistSoundsRef.current.get(affirmation.id);
+    if (!sound) {
+      console.warn(`[AudioManager] Sound not loaded for affirmation ${affirmation.id}, skipping`);
+      setTimeout(() => {
+        playNextAffirmation(index + 1);
+      }, affirmation.silenceAfterMs);
+      return;
+    }
+
+    try {
+      // Set volume
+      await sound.setVolumeAsync(affirmationsVolumeRef.current / 100);
+      
+      // Play the affirmation
+      await sound.playAsync();
+      
+      // Track playback progress
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded) {
+          const elapsed = status.positionMillis ? status.positionMillis / 1000 : 0;
+          // Calculate total time: sum of all previous affirmations + current position
+          let totalTime = 0;
+          for (let i = 0; i < index; i++) {
+            totalTime += (playlist[i].durationMs / 1000) + (playlist[i].silenceAfterMs / 1000);
+          }
+          totalTime += elapsed;
+          setCurrentTime(totalTime);
+          
+          // When this affirmation finishes, wait for silence then play next
+          if (status.didJustFinish) {
+            setTimeout(() => {
+              playNextAffirmation(index + 1);
+            }, affirmation.silenceAfterMs);
+          }
+        }
+      });
+    } catch (error) {
+      console.error(`[AudioManager] Failed to play affirmation ${index}:`, error);
+      // Continue to next
+      setTimeout(() => {
+        playNextAffirmation(index + 1);
+      }, affirmation.silenceAfterMs);
+    }
+  };
+
+  /**
+   * Play all tracks with fade-in timing:
+   * - Binaural beats and background: start at volume 0, fade in over 3 seconds
+   * - Wait 2 more seconds (total 5 seconds)
+   * - Then start affirmations playlist
    */
   const play = async () => {
     try {
-      if (affirmationsSound) {
-        await affirmationsSound.playAsync();
-      }
+      const FADE_IN_DURATION = 3000; // 3 seconds in milliseconds
+      const AFFIRMATION_DELAY = 5000; // 5 seconds total (3s fade + 2s wait)
+      
+      // Start binaural beats and background at volume 0, then fade in
       if (binauralSound) {
+        await binauralSound.setVolumeAsync(0);
         await binauralSound.playAsync();
+        // Fade in over 3 seconds
+        binauralSound.setVolumeAsync(binauralVolumeRef.current / 100, { duration: FADE_IN_DURATION });
       }
+      
       if (backgroundSound) {
+        await backgroundSound.setVolumeAsync(0);
         await backgroundSound.playAsync();
+        // Fade in over 3 seconds
+        backgroundSound.setVolumeAsync(backgroundVolumeRef.current / 100, { duration: FADE_IN_DURATION });
       }
-      setIsPlaying(true);
+      
+      // Wait 2 more seconds (total 5 seconds from start), then start affirmations
+      setTimeout(async () => {
+        if (playlist.length > 0) {
+          // Use new playlist system
+          setIsPlaying(true);
+          await playNextAffirmation(0);
+        } else if (affirmationsSound) {
+          // Fallback to legacy single-file system
+          await affirmationsSound.playAsync();
+          setIsPlaying(true);
+        }
+      }, AFFIRMATION_DELAY);
     } catch (error) {
       console.error("[AudioManager] Failed to play:", error);
     }
@@ -278,9 +449,20 @@ export function useAudioManager() {
    */
   const pause = async () => {
     try {
+      // Pause current affirmation
+      const currentAffirmation = playlist[currentAffirmationIndex];
+      if (currentAffirmation) {
+        const sound = playlistSoundsRef.current.get(currentAffirmation.id);
+        if (sound) {
+          await sound.pauseAsync();
+        }
+      }
+      
+      // Legacy support
       if (affirmationsSound) {
         await affirmationsSound.pauseAsync();
       }
+      
       if (binauralSound) {
         await binauralSound.pauseAsync();
       }
@@ -334,23 +516,15 @@ export function useAudioManager() {
   };
 
   // Apply volume changes when sounds are loaded
+  // Note: Binaural and background start at volume 0 for fade-in, so don't override here
   useEffect(() => {
     if (affirmationsSound) {
       affirmationsSound.setVolumeAsync(affirmationsVolumeRef.current / 100);
     }
   }, [affirmationsSound]);
 
-  useEffect(() => {
-    if (binauralSound) {
-      binauralSound.setVolumeAsync(binauralVolumeRef.current / 100);
-    }
-  }, [binauralSound]);
-
-  useEffect(() => {
-    if (backgroundSound) {
-      backgroundSound.setVolumeAsync(backgroundVolumeRef.current / 100);
-    }
-  }, [backgroundSound]);
+  // Don't auto-set volume for binaural/background - they start at 0 for fade-in
+  // Volume will be set during play() with fade-in animation
 
   // Cleanup on unmount
   useEffect(() => {
@@ -370,24 +544,4 @@ export function useAudioManager() {
     currentTime,
     duration,
     
-    // Loading
-    loadAffirmations,
-    loadBinauralBeats,
-    loadBackgroundNoise,
-    
-    // Playback controls
-    play,
-    pause,
-    seek,
-    
-    // Volume controls
-    setAffirmationsVolume,
-    setBinauralBeatsVolume,
-    setBackgroundNoiseVolume,
-    setBackgroundNoisePan,
-    
-    // Cleanup
-    cleanup,
-  };
-}
-
+    // Loadin

@@ -1,3 +1,18 @@
+import { describe, it, expect } from "vitest";
+import { app } from "../../src/index";
+
+describe("Sessions API", () => {
+  it("GET /api/sessions returns default sessions for guests", async () => {
+    const res = await app.request("/api/sessions");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(Array.isArray(data)).toBe(true);
+    // Should include some default sessions
+    expect(data.length).toBeGreaterThan(0);
+    expect(data.some((s: any) => typeof s.id === "string")).toBe(true);
+  });
+});
+
 /**
  * Sessions Route Tests
  * 

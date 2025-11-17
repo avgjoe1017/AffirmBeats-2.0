@@ -23,7 +23,6 @@
       "expo-audio",
       "expo-build-properties",
       "expo-font",
-      "expo-in-app-purchases",
       "expo-mail-composer",
       "expo-secure-store",
       "expo-sqlite",

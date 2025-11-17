@@ -39,13 +39,15 @@ export function generateCacheKey(
   affirmations: string[],
   voiceType: string,
   pace: string,
-  affirmationSpacing: number
+  affirmationSpacing: number,
+  goal?: string
 ): string {
   const content = JSON.stringify({
     affirmations: affirmations.sort(), // Sort for consistency
     voiceType,
     pace,
     affirmationSpacing,
+    goal: goal || null, // Include goal in cache key for proper caching
   });
   return crypto.createHash("sha256").update(content).digest("hex");
 }
@@ -122,7 +124,8 @@ export async function saveCachedAudio(
   affirmations: string[],
   voiceType: string,
   pace: string,
-  affirmationSpacing: number
+  affirmationSpacing: number,
+  goal?: string
 ): Promise<void> {
   try {
     const filePath = getCachedAudioPath(cacheKey);
@@ -229,6 +232,42 @@ if (process.env.NODE_ENV === "development") {
         }
       });
   }, 1000);
+}
+
+/**
+ * Delete all cache entries (for bulk regenerate audio)
+ */
+export async function deleteAllCache(): Promise<{ deleted: number; totalSize: number }> {
+  try {
+    const allEntries = await db.ttsCache.findMany();
+    
+    let deletedCount = 0;
+    let totalSize = 0;
+    
+    for (const entry of allEntries) {
+      try {
+        // Delete file if it exists
+        if (fs.existsSync(entry.filePath)) {
+          fs.unlinkSync(entry.filePath);
+          totalSize += entry.fileSize;
+        }
+        // Delete database entry
+        await db.ttsCache.delete({ where: { id: entry.id } });
+        deletedCount++;
+      } catch (error) {
+        console.error(`❌ [TTS Cache] Error deleting cache entry ${entry.cacheKey}:`, error);
+      }
+    }
+    
+    if (deletedCount > 0) {
+      console.log(`🧹 [TTS Cache] Deleted all ${deletedCount} cache entries (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
+    }
+    
+    return { deleted: deletedCount, totalSize };
+  } catch (error) {
+    console.error(`❌ [TTS Cache] Error deleting all cache:`, error);
+    throw error;
+  }
 }
 
 // Automatic cleanup disabled - database/disk space is cheaper than API calls

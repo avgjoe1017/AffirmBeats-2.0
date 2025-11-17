@@ -1,0 +1,16 @@
+{
+  "matching": {
+    "exactMatchThreshold": 0.75,
+    "pooledMatchThreshold": 0.65
+  },
+  "costs": {
+    "dailyAlert": 50,
+    "monthlyBudget": 500,
+    "maxCostPerSession": 0.25
+  },
+  "generation": {
+    "alwaysGenerateFirst": true,
+    "proUserGenerationRate": 0.6,
+    "freeUserGenerationRate": 0.2
+  }
+}

@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import * as InAppPurchases from "expo-in-app-purchases";
 import { Platform } from "react-native";
 import { 
   initializePurchases, 
@@ -7,7 +6,8 @@ import {
   purchasePro, 
   getPurchaseHistory,
   hasPurchasedPro,
-  PRO_PRODUCT_IDS 
+  PRO_PRODUCT_IDS,
+  setPurchaseListener
 } from "@/lib/payments";
 
 interface PurchaseState {
@@ -15,8 +15,8 @@ interface PurchaseState {
   isLoading: boolean;
   error: string | null;
   products: {
-    monthly: InAppPurchases.InAppPurchase | null;
-    annual: InAppPurchases.InAppPurchase | null;
+    monthly: any | null;
+    annual: any | null;
   };
   hasPurchased: boolean;
 }
@@ -45,26 +45,29 @@ export function useInAppPurchases() {
       try {
         setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-        // Connect to store
+        // Connect to store (may be unavailable in Expo Go)
         const connected = await initializePurchases();
-        if (!connected) {
-          throw new Error("Failed to connect to app store");
-        }
 
         if (!mounted) return;
 
-        // Load products
-        const products = await getProducts();
-        const monthlyProduct = products.find((p) => p.productId === PRO_PRODUCT_IDS.monthly);
-        const annualProduct = products.find((p) => p.productId === PRO_PRODUCT_IDS.annual);
+        let monthlyProduct: any | null = null;
+        let annualProduct: any | null = null;
+        let purchased = false;
 
-        // Check purchase history
-        const purchased = await hasPurchasedPro();
+        if (connected) {
+          // Load products (empty if unavailable)
+          const products = await getProducts();
+          monthlyProduct = products?.find((p) => p.productId === PRO_PRODUCT_IDS.monthly) || null;
+          annualProduct = products?.find((p) => p.productId === PRO_PRODUCT_IDS.annual) || null;
+
+          // Check purchase history
+          purchased = await hasPurchasedPro();
+        }
 
         setState({
-          isInitialized: true,
+          isInitialized: connected,
           isLoading: false,
-          error: null,
+          error: connected ? null : null,
           products: {
             monthly: monthlyProduct || null,
             annual: annualProduct || null,
@@ -73,35 +76,35 @@ export function useInAppPurchases() {
         });
 
         // Set up purchase update listener
-        InAppPurchases.setPurchaseListener(({ response, error }) => {
-          if (error) {
-            console.error("[Payments] Purchase error:", error);
-            setState((prev) => ({ 
-              ...prev, 
-              error: error.message || "Purchase failed",
-              isLoading: false 
-            }));
-            return;
-          }
-
-          if (response) {
-            // Purchase successful
-            console.log("[Payments] Purchase successful:", response);
-            setState((prev) => ({ 
-              ...prev, 
-              hasPurchased: true,
-              isLoading: false,
-              error: null 
-            }));
-          }
-        });
+        if (connected) {
+          await setPurchaseListener(({ response, error }: any) => {
+            if (error) {
+              console.error("[Payments] Purchase error:", error);
+              setState((prev) => ({
+                ...prev,
+                error: error.message || "Purchase failed",
+                isLoading: false,
+              }));
+              return;
+            }
+            if (response) {
+              setState((prev) => ({
+                ...prev,
+                hasPurchased: true,
+                isLoading: false,
+                error: null,
+              }));
+            }
+          });
+        }
       } catch (error) {
         console.error("[Payments] Initialization error:", error);
         if (mounted) {
           setState((prev) => ({
             ...prev,
             isLoading: false,
-            error: error instanceof Error ? error.message : "Failed to initialize purchases",
+            // Don't surface as error in Expo Go; just mark unavailable
+            error: null,
           }));
         }
       }

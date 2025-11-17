@@ -198,16 +198,38 @@ audioRouter.get("/binaural/:filename", async (c) => {
   }
 });
 
-audioRouter.get("/background/:filename", async (c) => {
+// Handle both formats: /background/filename and /background/subdirectory/filename
+audioRouter.get("/background/*", async (c) => {
   try {
-    // Decode the filename from URL encoding
-    let filename = decodeURIComponent(c.req.param("filename"));
+    // Get the full path after /background/
+    const fullPath = c.req.param("*") || "";
+    const pathParts = fullPath.split("/").filter(Boolean).map(p => decodeURIComponent(p));
     
-    logger.debug("Serving background audio file", { filename });
+    let subdirectory: string | null = null;
+    let filename: string;
+    
+    if (pathParts.length === 1) {
+      // Old format: /background/filename (no subdirectory)
+      filename = pathParts[0];
+    } else if (pathParts.length === 2) {
+      // New format: /background/subdirectory/filename
+      subdirectory = pathParts[0];
+      filename = pathParts[1];
+    } else {
+      logger.warn("Invalid background audio path format", { fullPath, pathParts });
+      return c.json({ 
+        error: "INVALID_PATH",
+        code: "INVALID_PATH",
+        message: "Invalid path format" 
+      }, 400);
+    }
+    
+    logger.debug("Serving background audio file", { filename, subdirectory });
 
     // Security: Prevent path traversal attacks
-    if (filename.includes("..") || path.isAbsolute(filename)) {
-      logger.warn("Invalid filename attempt (path traversal)", { filename });
+    if (filename.includes("..") || path.isAbsolute(filename) || 
+        (subdirectory && (subdirectory.includes("..") || path.isAbsolute(subdirectory)))) {
+      logger.warn("Invalid filename attempt (path traversal)", { filename, subdirectory });
       return c.json({ 
         error: "INVALID_FILENAME",
         code: "INVALID_FILENAME",
@@ -215,33 +237,67 @@ audioRouter.get("/background/:filename", async (c) => {
       }, 400);
     }
 
-    // Try different directories for background sounds
-    const possibleDirectories = [
-      "ZENmix - Roots",
-      "ZENmix - Postive Flow",
-      "ZENmix - Dreamscape",
-      "ZENmix - Ancient Healing",
-    ];
-
     let filePath: string | null = null;
-    for (const directory of possibleDirectories) {
-      const possiblePath = path.join(rawAudioFilesRoot, directory, filename);
-      const normalizedPath = path.normalize(possiblePath);
-      const normalizedRoot = path.normalize(path.join(rawAudioFilesRoot, directory));
-      
-      // Ensure the resolved path is within the allowed directory
-      if (!normalizedPath.startsWith(normalizedRoot)) {
-        continue;
-      }
 
-      if (fs.existsSync(normalizedPath)) {
-        filePath = normalizedPath;
-        break;
+    // Try optimized files first (assets/audio/background/)
+    if (subdirectory) {
+      const optimizedPath = path.join(optimizedAudioRoot, "background", subdirectory, filename);
+      const normalizedOptimizedPath = path.normalize(optimizedPath);
+      const normalizedOptimizedRoot = path.normalize(path.join(optimizedAudioRoot, "background", subdirectory));
+      
+      logger.debug("Checking optimized background file", { 
+        filename, 
+        subdirectory, 
+        optimizedPath,
+        normalizedOptimizedPath,
+        normalizedOptimizedRoot,
+        exists: fs.existsSync(normalizedOptimizedPath),
+        startsWith: normalizedOptimizedPath.startsWith(normalizedOptimizedRoot)
+      });
+      
+      // Check if optimized file exists and is within allowed directory
+      if (normalizedOptimizedPath.startsWith(normalizedOptimizedRoot) && fs.existsSync(normalizedOptimizedPath)) {
+        filePath = normalizedOptimizedPath;
+        logger.debug("Using optimized background file", { filename, subdirectory, filePath });
+      } else {
+        logger.warn("Optimized background file not found or invalid", { 
+          filename, 
+          subdirectory, 
+          optimizedPath: normalizedOptimizedPath,
+          exists: fs.existsSync(normalizedOptimizedPath)
+        });
+      }
+    }
+
+    // Fall back to legacy files if optimized not found
+    if (!filePath) {
+      const possibleDirectories = [
+        "ZENmix - Roots",
+        "ZENmix - Postive Flow",
+        "ZENmix - Dreamscape",
+        "ZENmix - Ancient Healing",
+      ];
+
+      for (const directory of possibleDirectories) {
+        const possiblePath = path.join(rawAudioFilesRoot, directory, filename);
+        const normalizedPath = path.normalize(possiblePath);
+        const normalizedRoot = path.normalize(path.join(rawAudioFilesRoot, directory));
+        
+        // Ensure the resolved path is within the allowed directory
+        if (!normalizedPath.startsWith(normalizedRoot)) {
+          continue;
+        }
+
+        if (fs.existsSync(normalizedPath)) {
+          filePath = normalizedPath;
+          logger.debug("Using legacy background file", { filename, directory, filePath });
+          break;
+        }
       }
     }
 
     if (!filePath) {
-      logger.warn("Background audio file not found", { filename, searchedDirectories: possibleDirectories });
+      logger.warn("Background audio file not found", { filename, subdirectory });
       return c.json({ 
         error: "FILE_NOT_FOUND",
         code: "FILE_NOT_FOUND",
@@ -249,11 +305,34 @@ audioRouter.get("/background/:filename", async (c) => {
       }, 404);
     }
 
-    logger.debug("Background audio file found", { filename, filePath });
+    logger.debug("Background audio file found", { filename, subdirectory, filePath });
 
-    // Determine content type
+    // Verify file exists before attempting to read
+    if (!fs.existsSync(filePath)) {
+      logger.error("Background audio file path resolved but file does not exist", { 
+        filename, 
+        subdirectory, 
+        filePath 
+      });
+      return c.json({ 
+        error: "FILE_NOT_FOUND",
+        code: "FILE_NOT_FOUND",
+        message: "File not found" 
+      }, 404);
+    }
+
+    // Determine content type based on file extension
     const ext = path.extname(filename).toLowerCase();
-    const contentType = ext === ".wav" ? "audio/wav" : "audio/mpeg";
+    let contentType: string;
+    if (ext === ".wav") {
+      contentType = "audio/wav";
+    } else if (ext === ".m4a") {
+      contentType = "audio/mp4"; // M4A files use audio/mp4 MIME type
+    } else if (ext === ".opus") {
+      contentType = "audio/opus";
+    } else {
+      contentType = "audio/mpeg"; // Default to MPEG for MP3
+    }
 
     // Get file stats for Range request support (required by iOS AVPlayer)
     const stats = fs.statSync(filePath);
@@ -295,9 +374,18 @@ audioRouter.get("/background/:filename", async (c) => {
     c.header("Content-Type", contentType);
     c.header("Content-Length", arrayBuffer.byteLength.toString());
     c.header("Accept-Ranges", "bytes"); // Indicate Range request support
-    c.header("Cache-Control", "public, max-age=31536000");
+    const isOptimized = filePath.includes("assets/audio");
+    c.header("Cache-Control", isOptimized 
+      ? "public, max-age=31536000, immutable" // Cache optimized files for 1 year (immutable)
+      : "public, max-age=31536000" // Cache legacy files for 1 year
+    );
 
-    logger.debug("Background audio file served successfully", { filename, fileSize: arrayBuffer.byteLength });
+    logger.debug("Background audio file served successfully", { 
+      filename, 
+      subdirectory,
+      fileSize: arrayBuffer.byteLength,
+      isOptimized 
+    });
 
     return c.body(arrayBuffer);
   } catch (error) {

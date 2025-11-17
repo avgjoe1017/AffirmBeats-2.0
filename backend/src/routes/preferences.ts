@@ -56,7 +56,7 @@ preferencesRouter.get("/", async (c) => {
   );
 
   return c.json({
-    voice: preferences.voice as "neutral" | "confident" | "whisper",
+    voice: preferences.voice as "neutral" | "confident" | "premium1" | "premium2" | "premium3" | "premium4" | "premium5" | "premium6" | "premium7" | "premium8",
     pace: preferences.pace as "slow" | "normal",
     noise: preferences.noise as "rain" | "brown" | "none",
     pronounStyle: preferences.pronounStyle as "you" | "i",
@@ -101,7 +101,7 @@ preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema),
   logger.info("Preferences updated", { userId: user.id });
 
   return c.json({
-    voice: preferences.voice as "neutral" | "confident" | "whisper",
+    voice: preferences.voice as "neutral" | "confident" | "premium1" | "premium2" | "premium3" | "premium4" | "premium5" | "premium6" | "premium7" | "premium8",
     pace: preferences.pace as "slow" | "normal",
     noise: preferences.noise as "rain" | "brown" | "none",
     pronounStyle: preferences.pronounStyle as "you" | "i",

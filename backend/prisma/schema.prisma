@@ -86,7 +86,7 @@ model UserPreferences {
   id            String   @id @default(cuid())
   userId        String   @unique
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  voice         String   @default("neutral") // neutral/confident/whisper
+  voice         String   @default("neutral") // neutral/confident/premium1-8
   pace          String   @default("normal") // slow/normal
   noise         String   @default("rain") // rain/brown/none
   pronounStyle  String   @default("you") // you/i
@@ -102,22 +102,42 @@ model AffirmationSession {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   goal         String // sleep/focus/calm/manifest
   title        String
-  affirmations String // JSON string of affirmation lines
+  affirmations String // JSON string of affirmation lines (legacy - kept for backward compatibility)
   voiceId      String
   pace         String
   noise        String
   lengthSec    Int // duration in seconds
-  audioUrl     String?
+  audioUrl     String? // Legacy - single session audio file (deprecated)
+  silenceBetweenMs Int @default(5000) // Silence duration between affirmations in milliseconds
   isFavorite   Boolean  @default(false)
   binauralCategory String? // delta/theta/alpha/beta/gamma
   binauralHz   String? // e.g., "0.5-4", "4-8", "8-14", "14-30", "30-100"
   createdAt    DateTime @default(now())
+
+  sessionAffirmations SessionAffirmation[] // Individual affirmations with audio
 
   // Indexes for common query patterns
   @@index([userId, createdAt]) // For fetching user sessions ordered by date
   @@index([userId, isFavorite]) // For fetching user's favorite sessions
   @@index([goal]) // For filtering sessions by goal type
   @@map("affirmation_session")
+}
+
+// Junction table linking sessions to individual affirmations with position and silence
+model SessionAffirmation {
+  id                String   @id @default(cuid())
+  sessionId         String
+  session           AffirmationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  affirmationId     String
+  affirmation       AffirmationLine @relation(fields: [affirmationId], references: [id], onDelete: Cascade)
+  position          Int      // Order in session (1, 2, 3, ...)
+  silenceAfterMs    Int      @default(5000) // Silence duration after this affirmation in milliseconds
+  createdAt         DateTime @default(now())
+
+  @@unique([sessionId, position]) // Ensure unique position per session
+  @@index([sessionId]) // Fast lookup by session
+  @@index([affirmationId]) // Fast lookup by affirmation
+  @@map("session_affirmation")
 }
 
 model UserSubscription {
@@ -158,4 +178,72 @@ model TtsCache {
   @@index([lastAccessedAt]) // For finding old unused cache entries
   @@index([cacheKey]) // Fast lookup by cache key
   @@map("tts_cache")
+}
+
+// Individual affirmation library for pool-based matching
+model AffirmationLine {
+  id                String   @id @default(cuid())
+  text              String   // "I am calm and centered"
+  goal              String   // sleep, focus, calm, manifest
+  tags              String[] // ["anxiety", "bedtime", "stress"] - stored as JSON array in PostgreSQL
+  emotion           String?  // "peace", "confidence", "safety"
+  useCount          Int      @default(0) // Track popularity
+  userRating        Float?   // Average user rating (1-5)
+  ttsAudioUrl       String?  // Pre-generated TTS URL (optional)
+  ttsVoiceId        String?  // Which voice was used
+  audioDurationMs   Int?     // Duration of the audio file in milliseconds
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sessionAffirmations SessionAffirmation[] // Affirmations used in sessions
+
+  @@index([goal, useCount])
+  @@index([goal]) // For filtering by goal
+  @@map("affirmation_line")
+}
+
+// Pre-built session templates for exact matching
+model SessionTemplate {
+  id                String   @id @default(cuid())
+  title             String
+  goal              String   // sleep, focus, calm, manifest
+  intent            String   // "help me sleep" "reduce anxiety"
+  intentKeywords    String[] // Keywords extracted from intent for matching
+  affirmationIds    String[] // References to AffirmationLine IDs (stored as JSON array)
+  binauralCategory  String?
+  binauralHz        String?
+  lengthSec         Int
+  useCount          Int      @default(0)
+  userRating        Float?   // Average user rating (1-5)
+  isDefault         Boolean  @default(false) // Your 8 default sessions
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([goal, useCount])
+  @@index([goal, isDefault])
+  @@index([intentKeywords]) // For keyword-based matching
+  @@map("session_template")
+}
+
+// Track what gets generated (for library building and analytics)
+model GenerationLog {
+  id                String   @id @default(cuid())
+  userId            String?
+  userIntent        String
+  goal              String
+  matchType         String   // "exact", "pooled", "generated", "fallback"
+  affirmationsUsed  String[] // IDs of affirmations used (or full text if generated)
+  sessionId         String?  // Reference to AffirmationSession if created
+  templateId        String?  // Reference to SessionTemplate if exact match
+  wasRated          Boolean  @default(false)
+  userRating        Int?     // 1-5 stars
+  wasReplayed       Boolean  @default(false) // Did they play it again?
+  apiCost           Float    @default(0) // Track actual cost in dollars
+  confidence        Float?   // Matching confidence score (0-1)
+  createdAt         DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([goal, matchType])
+  @@index([matchType, createdAt]) // For analytics
+  @@map("generation_log")
 }

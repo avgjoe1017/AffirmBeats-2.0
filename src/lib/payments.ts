@@ -8,8 +8,21 @@
  * - Supports monthly and annual billing periods
  */
 
-import * as InAppPurchases from "expo-in-app-purchases";
 import { Platform } from "react-native";
+
+// Lazy-load the native module to avoid crashes in Expo Go (module not included)
+let IAPModule: any | null | undefined;
+async function getIAPModule(): Promise<any | null> {
+  if (IAPModule !== undefined) return IAPModule;
+  try {
+    // Dynamically import; will fail in environments without native module
+    IAPModule = await import("expo-in-app-purchases");
+    return IAPModule;
+  } catch {
+    IAPModule = null;
+    return null;
+  }
+}
 
 // Product IDs for Pro subscriptions
 // These must match the product IDs configured in App Store Connect / Google Play Console
@@ -34,8 +47,10 @@ export const PRO_PRODUCT_ID = PRO_PRODUCT_IDS.monthly; // Default to monthly for
  * Must be called before any purchase operations
  */
 export async function initializePurchases(): Promise<boolean> {
+  const IAP = await getIAPModule();
+  if (!IAP || typeof IAP.connectAsync !== "function") return false;
   try {
-    const connected = await InAppPurchases.connectAsync();
+    const connected = await IAP.connectAsync();
     return connected;
   } catch (error) {
     console.error("[Payments] Failed to connect to store:", error);
@@ -46,10 +61,12 @@ export async function initializePurchases(): Promise<boolean> {
 /**
  * Get available products from the store
  */
-export async function getProducts(): Promise<InAppPurchases.InAppPurchase[]> {
+export async function getProducts(): Promise<any[]> {
+  const IAP = await getIAPModule();
+  if (!IAP || typeof IAP.getProductsAsync !== "function") return [];
   try {
     const productIds = [PRO_PRODUCT_IDS.monthly, PRO_PRODUCT_IDS.annual];
-    const products = await InAppPurchases.getProductsAsync(productIds);
+    const products = await IAP.getProductsAsync(productIds);
     return products.results || [];
   } catch (error) {
     console.error("[Payments] Failed to get products:", error);
@@ -65,6 +82,10 @@ export async function getProducts(): Promise<InAppPurchases.InAppPurchase[]> {
  * @param billingPeriod - "monthly" or "annual"
  */
 export async function purchasePro(billingPeriod: "monthly" | "annual"): Promise<void> {
+  const IAP = await getIAPModule();
+  if (!IAP || typeof IAP.purchaseItemAsync !== "function") {
+    throw new Error("In-app purchases are not available in this environment.");
+  }
   try {
     // First, get the products to ensure they're available
     const products = await getProducts();
@@ -77,7 +98,7 @@ export async function purchasePro(billingPeriod: "monthly" | "annual"): Promise<
 
     // Initiate the purchase
     // The purchase result will come through the purchase listener set up in the hook
-    await InAppPurchases.purchaseItemAsync(productId);
+    await IAP.purchaseItemAsync(productId);
   } catch (error) {
     console.error("[Payments] Purchase failed:", error);
     throw error;
@@ -87,9 +108,11 @@ export async function purchasePro(billingPeriod: "monthly" | "annual"): Promise<
 /**
  * Get purchase history (for restore purchases)
  */
-export async function getPurchaseHistory(): Promise<InAppPurchases.InAppPurchase[]> {
+export async function getPurchaseHistory(): Promise<any[]> {
+  const IAP = await getIAPModule();
+  if (!IAP || typeof IAP.getPurchaseHistoryAsync !== "function") return [];
   try {
-    const history = await InAppPurchases.getPurchaseHistoryAsync();
+    const history = await IAP.getPurchaseHistoryAsync();
     return history.results || [];
   } catch (error) {
     console.error("[Payments] Failed to get purchase history:", error);
@@ -118,10 +141,28 @@ export async function hasPurchasedPro(): Promise<boolean> {
  * Disconnect from the store (cleanup)
  */
 export async function disconnectPurchases(): Promise<void> {
+  const IAP = await getIAPModule();
+  if (!IAP || typeof IAP.disconnectAsync !== "function") return;
   try {
-    await InAppPurchases.disconnectAsync();
+    await IAP.disconnectAsync();
   } catch (error) {
     console.error("[Payments] Failed to disconnect:", error);
   }
+}
+
+/**
+ * Set purchase listener if module is available
+ */
+export async function setPurchaseListener(
+  listener: (event: any) => void
+): Promise<boolean> {
+  const IAP = await getIAPModule();
+  if (!IAP || typeof IAP.setPurchaseListener !== "function") return false;
+  try {
+    IAP.setPurchaseListener(listener);
+  } catch {
+    return false;
+  }
+  return true;
 }
 

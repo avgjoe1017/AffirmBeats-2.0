@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Templates - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: #1a1a2e;
+            border-right: 1px solid #2a2a3e;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            color: #8b7ab8;
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #9e9eb0;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            background: #2a2a3e;
+            color: #e0e0e0;
+        }
+        .nav-item.active {
+            background: #8b7ab8;
+            color: white;
+        }
+        .nav-item .icon {
+            font-size: 20px;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+        h1 { color: #8b7ab8; margin-bottom: 10px; }
+        .subtitle { color: #9e9eb0; margin-bottom: 20px; }
+        .btn {
+            background: #8b7ab8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover { background: #6b5a98; }
+        .btn-danger { background: #dc2626; }
+        .template-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .template-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+        .template-title { color: #8b7ab8; font-size: 18px; font-weight: 600; }
+        .template-meta {
+            display: flex;
+            gap: 15px;
+            color: #9e9eb0;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        .template-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-item {
+            background: #0f0f1e;
+            padding: 10px;
+            border-radius: 6px;
+        }
+        .stat-label { color: #9e9eb0; font-size: 12px; }
+        .stat-value { color: #e0e0e0; font-size: 16px; font-weight: 600; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #9e9eb0;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            background: #0f0f1e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .affirmation-list {
+            background: #0f0f1e;
+            padding: 15px;
+            border-radius: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .affirmation-item {
+            padding: 8px;
+            border-bottom: 1px solid #2a2a3e;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Admin Panel</h2>
+            <a href="/admin" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="/admin/affirmations" class="nav-item">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="/admin/users" class="nav-item">
+                <span class="icon">👥</span>
+                <span>Users</span>
+            </a>
+            <a href="/admin/logs" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Logs</span>
+            </a>
+            <a href="/admin/templates" class="nav-item active">
+                <span class="icon">🎨</span>
+                <span>Templates</span>
+            </a>
+            <a href="/admin/default-sessions" class="nav-item">
+                <span class="icon">🎯</span>
+                <span>Defaults</span>
+            </a>
+            <a href="/admin/voice-settings" class="nav-item">
+                <span class="icon">🎤</span>
+                <span>Voice</span>
+            </a>
+            <a href="/admin/config" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>Config</span>
+            </a>
+        </div>
+
+        <div class="main-content">
+            <div style="margin-bottom: 20px;">
+                <h1>🎨 Session Templates</h1>
+                <p class="subtitle">Manage session templates for exact matching</p>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
+                <button class="btn" onclick="openCreateModal()">+ Create Template</button>
+                <a href="/api/admin/export?type=templates" class="btn" download style="text-decoration: none; display: inline-block;">📥 Export CSV</a>
+            </div>
+            <div id="templatesList"></div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #8b7ab8; margin: 0;" id="modalTitle">Create Template</h2>
+                <button onclick="closeModal()" style="background: none; border: none; color: #9e9eb0; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            <form id="templateForm" onsubmit="saveTemplate(event)">
+                <div class="form-group">
+                    <label>Title *</label>
+                    <input type="text" id="templateTitle" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label>Goal *</label>
+                        <select id="templateGoal" required>
+                            <option value="sleep">Sleep</option>
+                            <option value="focus">Focus</option>
+                            <option value="calm">Calm</option>
+                            <option value="manifest">Manifest</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Duration (seconds) *</label>
+                        <input type="number" id="templateLength" required min="60">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Intent *</label>
+                    <input type="text" id="templateIntent" placeholder="help me sleep" required>
+                </div>
+                <div class="form-group">
+                    <label>Intent Keywords (comma-separated) *</label>
+                    <input type="text" id="templateKeywords" placeholder="evening, wind down, bedtime, sleep" required>
+                </div>
+                <div class="form-group">
+                    <label>Affirmation IDs (comma-separated) *</label>
+                    <input type="text" id="templateAffirmations" placeholder="aff_123, aff_456" required>
+                    <small style="color: #9e9eb0; font-size: 12px;">Enter affirmation IDs from the library</small>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label>Binaural Category</label>
+                        <select id="templateBinaural">
+                            <option value="">None</option>
+                            <option value="delta">Delta (0.5-4 Hz)</option>
+                            <option value="theta">Theta (4-8 Hz)</option>
+                            <option value="alpha">Alpha (8-14 Hz)</option>
+                            <option value="beta">Beta (14-30 Hz)</option>
+                            <option value="gamma">Gamma (30-100 Hz)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Binaural Hz</label>
+                        <input type="text" id="templateBinauralHz" placeholder="0.5-4">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let editingId = null;
+
+        async function loadTemplates() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/templates`);
+                const data = await response.json();
+                displayTemplates(data.templates);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function displayTemplates(templates) {
+            const list = document.getElementById('templatesList');
+            
+            if (templates.length === 0) {
+                list.innerHTML = '<div style="text-align: center; padding: 40px; color: #9e9eb0;">No templates found</div>';
+                return;
+            }
+
+            list.innerHTML = templates.map(t => `
+                <div class="template-card">
+                    <div class="template-header">
+                        <div>
+                            <div class="template-title">${t.title} ${t.isDefault ? '⭐' : ''}</div>
+                            <div class="template-meta">
+                                <span>Goal: ${t.goal}</span>
+                                <span>• Intent: "${t.intent}"</span>
+                                <span>• Keywords: ${t.intentKeywords.join(', ')}</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            ${!t.isDefault ? `<button class="btn" onclick="openEditModal('${t.id}')">✏️ Edit</button>` : ''}
+                            ${!t.isDefault ? `<button class="btn btn-danger" onclick="deleteTemplate('${t.id}')">🗑️ Delete</button>` : ''}
+                        </div>
+                    </div>
+                    <div class="template-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Used</div>
+                            <div class="stat-value">${t.actualUseCount || 0}x</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Rating</div>
+                            <div class="stat-value">${t.avgRating > 0 ? t.avgRating.toFixed(1) : 'N/A'}★</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Affirmations</div>
+                            <div class="stat-value">${t.affirmationIds.length}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Duration</div>
+                            <div class="stat-value">${Math.floor(t.lengthSec / 60)}m</div>
+                        </div>
+                    </div>
+                    ${t.affirmations && t.affirmations.length > 0 ? `
+                        <div style="margin-top: 15px;">
+                            <strong style="color: #8b7ab8;">Affirmations:</strong>
+                            <div style="margin-top: 10px; color: #9e9eb0; font-size: 14px;">
+                                ${t.affirmations.map(a => `• ${a.text || a.id}`).join('<br>')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        function openCreateModal() {
+            editingId = null;
+            document.getElementById('modalTitle').textContent = 'Create Template';
+            document.getElementById('templateForm').reset();
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        async function openEditModal(id) {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/templates`);
+                const data = await response.json();
+                const template = data.templates.find(t => t.id === id);
+                
+                if (!template) {
+                    alert('Template not found');
+                    return;
+                }
+
+                editingId = id;
+                document.getElementById('modalTitle').textContent = 'Edit Template';
+                document.getElementById('templateTitle').value = template.title;
+                document.getElementById('templateGoal').value = template.goal;
+                document.getElementById('templateIntent').value = template.intent;
+                document.getElementById('templateKeywords').value = template.intentKeywords.join(', ');
+                document.getElementById('templateAffirmations').value = template.affirmationIds.join(', ');
+                document.getElementById('templateLength').value = template.lengthSec;
+                document.getElementById('templateBinaural').value = template.binauralCategory || '';
+                document.getElementById('templateBinauralHz').value = template.binauralHz || '';
+                document.getElementById('editModal').classList.add('active');
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('active');
+            editingId = null;
+        }
+
+        async function saveTemplate(e) {
+            e.preventDefault();
+            const title = document.getElementById('templateTitle').value;
+            const goal = document.getElementById('templateGoal').value;
+            const intent = document.getElementById('templateIntent').value;
+            const keywords = document.getElementById('templateKeywords').value.split(',').map(k => k.trim()).filter(k => k);
+            const affirmationIds = document.getElementById('templateAffirmations').value.split(',').map(a => a.trim()).filter(a => a);
+            const lengthSec = parseInt(document.getElementById('templateLength').value);
+            const binauralCategory = document.getElementById('templateBinaural').value || null;
+            const binauralHz = document.getElementById('templateBinauralHz').value || null;
+
+            const url = editingId 
+                ? `${API_BASE}/api/admin/templates/${editingId}`
+                : `${API_BASE}/api/admin/templates`;
+            
+            const method = editingId ? 'PATCH' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        goal,
+                        intent,
+                        intentKeywords: keywords,
+                        affirmationIds,
+                        lengthSec,
+                        binauralCategory,
+                        binauralHz,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to save');
+                }
+
+                closeModal();
+                loadTemplates();
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        async function deleteTemplate(id) {
+            if (!confirm('Are you sure you want to delete this template?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/templates/${id}`, {
+                    method: 'DELETE',
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    if (error.error === 'CANNOT_DELETE') {
+                        alert(error.message);
+                        return;
+                    }
+                    throw new Error(error.message || 'Failed to delete');
+                }
+
+                loadTemplates();
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        loadTemplates();
+    </script>
+</body>
+</html>
+

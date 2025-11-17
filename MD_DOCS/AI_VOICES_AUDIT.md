@@ -1,6 +1,7 @@
 # AI Voices Audit
 
-**Date:** 2025-01-XX  
+**Date:** 2025-11-16  
+**Last Updated:** 2025-11-16 - Updated default voices to Mira and Archer  
 **Provider:** ElevenLabs  
 **Model:** `eleven_monolingual_v1`
 
@@ -12,22 +13,24 @@ The app currently uses **3 AI voices** from ElevenLabs for text-to-speech genera
 
 ## Voice Inventory
 
-### 1. **Neutral** (Free)
-- **Backend Voice ID:** `21m00Tcm4TlvDq8ikWAM`
-- **ElevenLabs Voice Name:** Rachel
-- **Display Name:** "Neutral"
-- **Description:** "Calm and balanced tone"
+### 1. **Mira (F)** (Free)
+- **Backend Voice ID:** `ZqvIIuD5aI9JFejebHiH`
+- **ElevenLabs Voice Name:** Mira
+- **Display Name:** "Mira (F)"
+- **Description:** "Meditation, Calming Down, Relaxing"
+- **Gender:** Female
 - **Premium Status:** ❌ Free (available to all users)
 - **Voice Settings:**
   - Stability: `0.5`
   - Similarity Boost: `0.75`
   - Speed: `0.85` (slow), `1.0` (normal), `1.15` (fast) - based on pace setting
 
-### 2. **Confident** (Free)
-- **Backend Voice ID:** `VR6AewLTigWG4xSOukaG`
-- **ElevenLabs Voice Name:** Arnold
-- **Display Name:** "Confident"
-- **Description:** "Strong and empowering"
+### 2. **Archer (M)** (Free)
+- **Backend Voice ID:** `xGDJhCwcqw94ypljc95Z`
+- **ElevenLabs Voice Name:** Archer
+- **Display Name:** "Archer (M)"
+- **Description:** "Guided Meditation & Narration"
+- **Gender:** Male
 - **Premium Status:** ❌ Free (available to all users)
 - **Voice Settings:**
   - Stability: `0.5`
@@ -54,8 +57,8 @@ The app currently uses **3 AI voices** from ElevenLabs for text-to-speech genera
 
 ```typescript
 const VOICE_IDS = {
-  neutral: "21m00Tcm4TlvDq8ikWAM", // Rachel - calm and clear
-  confident: "VR6AewLTigWG4xSOukaG", // Arnold - confident
+  neutral: "ZqvIIuD5aI9JFejebHiH", // Mira (F) - Meditation, Calming Down, Relaxing
+  confident: "xGDJhCwcqw94ypljc95Z", // Archer (M) - Guided Meditation & Narration
   whisper: "EXAVITQu4vr4xnSDxMaL", // Bella - soft and gentle
 };
 ```
@@ -71,8 +74,8 @@ const VOICE_IDS = {
 
 ```typescript
 const voices = [
-  { value: "neutral" as const, label: "Neutral", description: "Calm and balanced tone", isPremium: false },
-  { value: "confident" as const, label: "Confident", description: "Strong and empowering", isPremium: false },
+  { value: "neutral" as const, label: "Mira (F)", description: "Meditation, Calming Down, Relaxing", isPremium: false },
+  { value: "confident" as const, label: "Archer (M)", description: "Guided Meditation & Narration", isPremium: false },
   { value: "whisper" as const, label: "Whisper", description: "Soft and soothing", isPremium: true },
 ];
 ```
@@ -142,8 +145,8 @@ voice: z.enum(["neutral", "confident", "whisper"])
 ## Premium Status Verification
 
 ### Frontend (SettingsScreen.tsx)
-- ✅ Neutral: `isPremium: false`
-- ✅ Confident: `isPremium: false`
+- ✅ Mira (F) (neutral): `isPremium: false`
+- ✅ Archer (M) (confident): `isPremium: false`
 - ✅ Whisper: `isPremium: true`
 
 ### Backend (TTS Route)
@@ -163,14 +166,14 @@ voice: z.enum(["neutral", "confident", "whisper"])
 ### ElevenLabs Voice IDs
 All voice IDs are hardcoded in the backend. To verify they're still valid:
 
-1. **Neutral (Rachel):** `21m00Tcm4TlvDq8ikWAM`
-2. **Confident (Arnold):** `VR6AewLTigWG4xSOukaG`
+1. **Mira (F) (neutral):** `ZqvIIuD5aI9JFejebHiH`
+2. **Archer (M) (confident):** `xGDJhCwcqw94ypljc95Z`
 3. **Whisper (Bella):** `EXAVITQu4vr4xnSDxMaL`
 
 ### Verification Steps
 1. Check ElevenLabs dashboard to confirm voice IDs are still active
 2. Test each voice with sample text
-3. Verify voice names match (Rachel, Arnold, Bella)
+3. Verify voice names match (Mira, Archer, Bella)
 4. Check if any voices have been deprecated or updated
 
 ---
@@ -267,7 +270,7 @@ All voice IDs are hardcoded in the backend. To verify they're still valid:
 ## Summary
 
 **Total Voices:** 3  
-**Free Voices:** 2 (Neutral, Confident)  
+**Free Voices:** 2 (Mira (F), Archer (M))  
 **Premium Voices:** 1 (Whisper)  
 **Provider:** ElevenLabs  
 **Model:** `eleven_monolingual_v1`  

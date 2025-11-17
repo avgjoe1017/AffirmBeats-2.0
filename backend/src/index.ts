@@ -14,6 +14,7 @@ import { ttsRouter } from "./routes/tts";
 import { subscription } from "./routes/subscription";
 import { audioRouter } from "./routes/audio";
 import { metricsRouter } from "./routes/metrics";
+import { adminRouter } from "./routes/admin";
 import { type AppType } from "./types";
 import { resetMonthlyCounters } from "./utils/subscriptionReset";
 import { logger } from "./lib/logger";
@@ -22,6 +23,7 @@ import { isRedisAvailable } from "./lib/redis";
 import { errorHandler } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
 import { metricsMiddleware } from "./middleware/metricsMiddleware";
+import { adminAuth } from "./middleware/adminAuth";
 
 // AppType context adds user and session to the context, will be null if the user or session is null
 export const app = new Hono<AppType>();
@@ -87,6 +89,49 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 logger.info("Serving static files from uploads/ directory");
 app.use("/uploads/*", serveStatic({ root: "./" }));
 
+// Serve admin dashboard HTML pages (protected with adminAuth)
+function serveAdminPage(page: string) {
+  return async (c: any) => {
+    try {
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      
+      // Get backend directory (one level up from src)
+      let backendDir: string;
+      if (typeof import.meta !== "undefined" && "dir" in import.meta && import.meta.dir) {
+        // Bun: import.meta.dir points to backend/src
+        backendDir = path.join(import.meta.dir, "..");
+      } else if (typeof __dirname !== "undefined") {
+        // Node.js: __dirname points to backend/src
+        backendDir = path.join(__dirname, "..");
+      } else {
+        // Fallback
+        backendDir = process.cwd();
+      }
+      
+      const filePath = path.join(backendDir, "public", `admin-${page}.html`);
+      const html = await fs.readFile(filePath, "utf-8");
+      return c.html(html);
+    } catch (error) {
+      logger.error(`Failed to serve admin ${page} page`, error);
+      return c.text(`Admin ${page} page not found`, 404);
+    }
+  };
+}
+
+logger.info("Serving admin pages at /admin (protected)");
+// Login page (no auth required)
+app.get("/admin/login", serveAdminPage("login"));
+// Protected admin pages
+app.get("/admin", adminAuth, serveAdminPage("dashboard"));
+app.get("/admin/affirmations", adminAuth, serveAdminPage("affirmations"));
+app.get("/admin/users", adminAuth, serveAdminPage("users"));
+app.get("/admin/logs", adminAuth, serveAdminPage("logs"));
+app.get("/admin/templates", adminAuth, serveAdminPage("templates"));
+app.get("/admin/default-sessions", adminAuth, serveAdminPage("default-sessions"));
+app.get("/admin/voice-settings", adminAuth, serveAdminPage("voice-settings"));
+app.get("/admin/config", adminAuth, serveAdminPage("config"));
+
 // Mount route modules
 logger.info("Mounting upload routes at /api/upload");
 app.route("/api/upload", uploadRouter);
@@ -111,6 +156,9 @@ app.route("/api/audio", audioRouter);
 
 logger.info("Mounting metrics routes at /api/metrics");
 app.route("/api/metrics", metricsRouter);
+
+logger.info("Mounting admin routes at /api/admin");
+app.route("/api/admin", adminRouter);
 
 // Health check endpoint
 // Used by load balancers and monitoring tools to verify service is running
@@ -227,27 +275,29 @@ app.post("/api/admin/reset-subscriptions", async (c) => {
   }
 });
 
-// Start the server
-logger.info("Starting server", { port: env.PORT, environment: env.NODE_ENV });
-serve({ fetch: app.fetch, port: Number(env.PORT) }, () => {
-  logger.info("Server started successfully", {
-    port: env.PORT,
-    environment: env.NODE_ENV,
-    baseUrl: `http://localhost:${env.PORT}`,
-  });
-  
-  // Log available endpoints in development
-  if (env.NODE_ENV === "development") {
-    logger.debug("Available endpoints", {
-      auth: "/api/auth/*",
-      upload: "POST /api/upload/image",
-      sample: "GET/POST /api/sample",
-      preferences: "GET/PATCH /api/preferences",
-      sessions: "GET/POST /api/sessions",
-      tts: "POST /api/tts/generate",
-      subscription: "GET/POST /api/subscription",
-      health: "GET /health",
-      admin: "POST /api/admin/reset-subscriptions",
+// Start the server (skip when running tests)
+if (env.NODE_ENV !== "test" && !process.env.VITEST) {
+  logger.info("Starting server", { port: env.PORT, environment: env.NODE_ENV });
+  serve({ fetch: app.fetch, port: Number(env.PORT) }, () => {
+    logger.info("Server started successfully", {
+      port: env.PORT,
+      environment: env.NODE_ENV,
+      baseUrl: `http://localhost:${env.PORT}`,
     });
-  }
-});
+    
+    // Log available endpoints in development
+    if (env.NODE_ENV === "development") {
+      logger.debug("Available endpoints", {
+        auth: "/api/auth/*",
+        upload: "POST /api/upload/image",
+        sample: "GET/POST /api/sample",
+        preferences: "GET/PATCH /api/preferences",
+        sessions: "GET/POST /api/sessions",
+        tts: "POST /api/tts/generate",
+        subscription: "GET/POST /api/subscription",
+        health: "GET /health",
+        admin: "POST /api/admin/reset-subscriptions",
+      });
+    }
+  });
+}

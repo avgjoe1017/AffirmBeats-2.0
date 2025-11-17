@@ -37,7 +37,7 @@ export type UploadImageResponse = z.infer<typeof uploadImageResponseSchema>;
 
 // GET /api/preferences
 export const getPreferencesResponseSchema = z.object({
-  voice: z.enum(["neutral", "confident", "whisper"]),
+  voice: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]),
   pace: z.enum(["slow", "normal"]),
   noise: z.enum(["rain", "brown", "none", "ocean", "forest", "wind", "fire", "thunder"]),
   pronounStyle: z.enum(["you", "i"]),
@@ -47,7 +47,7 @@ export type GetPreferencesResponse = z.infer<typeof getPreferencesResponseSchema
 
 // PATCH /api/preferences
 export const updatePreferencesRequestSchema = z.object({
-  voice: z.enum(["neutral", "confident", "whisper"]).optional(),
+  voice: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]).optional(),
   pace: z.enum(["slow", "normal"]).optional(),
   noise: z.enum(["rain", "brown", "none", "ocean", "forest", "wind", "fire", "thunder"]).optional(),
   pronounStyle: z.enum(["you", "i"]).optional(),
@@ -108,15 +108,16 @@ export type ToggleFavoriteRequest = z.infer<typeof toggleFavoriteRequestSchema>;
 // POST /api/tts/generate
 export const generateTTSRequestSchema = z.object({
   text: z.string().min(1),
-  voiceType: z.enum(["neutral", "confident", "whisper"]),
+  voiceType: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]),
 });
 export type GenerateTTSRequest = z.infer<typeof generateTTSRequestSchema>;
 
 // POST /api/tts/generate-session
 export const generateSessionAudioRequestSchema = z.object({
   affirmations: z.array(z.string()),
-  voiceType: z.enum(["neutral", "confident", "whisper"]),
+  voiceType: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]),
   pace: z.enum(["slow", "normal"]),
+  goal: z.enum(["sleep", "focus", "calm", "manifest"]).optional(), // Goal for voice configuration
 });
 export type GenerateSessionAudioRequest = z.infer<typeof generateSessionAudioRequestSchema>;
 
@@ -223,8 +224,8 @@ export type CancelSubscriptionResponse = z.infer<typeof cancelSubscriptionRespon
 export const verifyPurchaseRequestSchema = z.object({
   productId: z.string(),
   platform: z.enum(["ios", "android", "web"]),
-  receipt?: z.string().optional(), // Receipt data for verification
-  transactionId?: z.string().optional(), // Transaction ID
+  receipt: z.string().optional(), // Receipt data for verification
+  transactionId: z.string().optional(), // Transaction ID
 });
 export type VerifyPurchaseRequest = z.infer<typeof verifyPurchaseRequestSchema>;
 export const verifyPurchaseResponseSchema = z.object({

@@ -264,6 +264,7 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
   const updateSession = useAppStore((s) => s.updateSession);
   const addSession = useAppStore((s) => s.addSession);
   const preferences = useAppStore((s) => s.preferences);
+  const subscription = useAppStore((s) => s.subscription);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioMixer, setShowAudioMixer] = useState(false);
@@ -413,7 +414,8 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
           session.affirmations,
           (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
           (session.pace || "normal") as "slow" | "normal",
-          preferences.affirmationSpacing || 8
+          preferences.affirmationSpacing || 8,
+          session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
         );
 
         // Load binaural beats if category is available
@@ -433,7 +435,13 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
         }
 
         // Load background noise
-        const backgroundUrl = getBackgroundSoundUrl((session.noise || "none") as BackgroundSound, BACKEND_URL);
+        const hasPremiumAccess = subscription?.tier === "pro";
+        const backgroundUrl = getBackgroundSoundUrl(
+          (session.noise || "none") as BackgroundSound, 
+          BACKEND_URL,
+          true, // useOptimized
+          hasPremiumAccess
+        );
         if (backgroundUrl) {
           try {
             console.log("[PlaybackScreen] Loading background sound from:", backgroundUrl);

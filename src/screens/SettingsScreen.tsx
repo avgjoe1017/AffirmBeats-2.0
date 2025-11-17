@@ -28,17 +28,24 @@ const SettingsScreen = ({ navigation }: Props) => {
   };
 
   const voices = [
-    { value: "neutral" as const, label: "Neutral", description: "Calm and balanced tone", isPremium: false },
-    { value: "confident" as const, label: "Confident", description: "Strong and empowering", isPremium: false },
-    { value: "whisper" as const, label: "Whisper", description: "Soft and soothing", isPremium: true },
+    { value: "neutral" as const, label: "Mira (F)", description: "Meditation, Calming Down, Relaxing", isPremium: false },
+    { value: "confident" as const, label: "Archer (M)", description: "Guided Meditation & Narration", isPremium: false },
+    { value: "premium1" as const, label: "James (M)", description: "Premium voice", isPremium: true },
+    { value: "premium2" as const, label: "Priyanka (F)", description: "Premium voice", isPremium: true },
+    { value: "premium3" as const, label: "Rhea (F)", description: "Premium voice", isPremium: true },
+    { value: "premium4" as const, label: "Chuck (M)", description: "Premium voice", isPremium: true },
+    { value: "premium5" as const, label: "Zara (F)", description: "Premium voice", isPremium: true },
+    { value: "premium6" as const, label: "Almee (F)", description: "Premium voice", isPremium: true },
+    { value: "premium7" as const, label: "Kristen (F)", description: "Premium voice", isPremium: true },
+    { value: "premium8" as const, label: "Drew (M)", description: "Premium voice", isPremium: true },
   ];
 
   const backgrounds = [
     { value: "none" as const, label: "None", description: "Pure silence", isPremium: false },
-    { value: "rain" as const, label: "Rain", description: "Gentle rainfall", isPremium: false },
+    { value: "rain" as const, label: "Rain", description: "Gentle rainfall", isPremium: false }, // FREE - uses Heavy Rain
     { value: "brown" as const, label: "Brown Noise", description: "Deep rumbling", isPremium: true },
     { value: "ocean" as const, label: "Ocean Waves", description: "Coastal sounds", isPremium: true },
-    { value: "forest" as const, label: "Forest", description: "Nature ambience", isPremium: true },
+    { value: "forest" as const, label: "Forest", description: "Nature ambience", isPremium: false }, // FREE - uses Birds Chirping
     { value: "wind" as const, label: "Wind Chimes", description: "Peaceful chimes", isPremium: true },
     { value: "fire" as const, label: "Fireplace", description: "Crackling fire", isPremium: true },
     { value: "thunder" as const, label: "Distant Thunder", description: "Rolling thunder", isPremium: true },

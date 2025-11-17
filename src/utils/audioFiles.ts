@@ -87,10 +87,46 @@ export const legacyBinauralBeatFileNames: Record<BinauralCategory, string[]> = {
 export const binauralBeatFileNames: Record<BinauralCategory, string[]> = legacyBinauralBeatFileNames;
 
 /**
- * Maps background sound preferences to audio file names
- * These files should be in assets/audio/background/ directory
+ * Maps background sound preferences to optimized audio files
+ * These are loopable M4A files in assets/audio/background/looped/
+ * Format: { subdirectory: filename }
  */
-export const backgroundSoundFileNames: Record<BackgroundSound, string | null> = {
+export const optimizedBackgroundSoundFiles: Record<BackgroundSound, Array<{ subdirectory: string; filename: string; isPremium?: boolean }> | null> = {
+  none: null,
+  rain: [
+    { subdirectory: "looped", filename: "Heavy Rain.m4a", isPremium: false }, // FREE
+    { subdirectory: "looped", filename: "Forest Rain.m4a", isPremium: true }, // PREMIUM
+  ],
+  brown: [
+    { subdirectory: "looped", filename: "Regeneration.m4a", isPremium: true },
+    { subdirectory: "looped", filename: "Tibetan Om.m4a", isPremium: true },
+  ],
+  ocean: [
+    { subdirectory: "looped", filename: "Distant Ocean.m4a", isPremium: true },
+  ],
+  forest: [
+    { subdirectory: "looped", filename: "Forest Rain.m4a", isPremium: true },
+    { subdirectory: "looped", filename: "Babbling Brook.m4a", isPremium: true },
+    { subdirectory: "looped", filename: "Birds Chirping.m4a", isPremium: false }, // FREE
+  ],
+  wind: [
+    { subdirectory: "looped", filename: "Storm.m4a", isPremium: true },
+  ],
+  fire: [
+    { subdirectory: "looped", filename: "Regeneration.m4a", isPremium: true },
+    { subdirectory: "looped", filename: "Tibetan Om.m4a", isPremium: true },
+  ],
+  thunder: [
+    { subdirectory: "looped", filename: "Thunder.m4a", isPremium: true },
+    { subdirectory: "looped", filename: "Storm.m4a", isPremium: true },
+  ],
+};
+
+/**
+ * Legacy background sound file names (original MP3 files)
+ * Used as fallback when optimized files are not available.
+ */
+export const legacyBackgroundSoundFileNames: Record<BackgroundSound, string | null> = {
   none: null,
   rain: "Birds chirping during light rain.mp3",
   brown: "Peaceful Mind Music with Underwater Bubbles and Brown Noise.mp3",
@@ -100,6 +136,13 @@ export const backgroundSoundFileNames: Record<BackgroundSound, string | null> = 
   fire: "Cozy Fire during a Thunderstorm with Theta Waves.mp3",
   thunder: "Peaceful Time Music with Thunder and White Noise.mp3",
 };
+
+/**
+ * Maps background sound preferences to audio file names
+ * @deprecated Use optimizedBackgroundSoundFiles instead
+ * Kept for backward compatibility
+ */
+export const backgroundSoundFileNames: Record<BackgroundSound, string | null> = legacyBackgroundSoundFileNames;
 
 /**
  * Get an optimized binaural beat file name for a category
@@ -135,10 +178,48 @@ export function getBinauralBeatFileName(category: BinauralCategory): string {
 }
 
 /**
+ * Get an optimized background sound file for a preference
+ * Returns a random file from available options for variety
+ * Filters out premium files if user doesn't have premium access
+ */
+export function getOptimizedBackgroundSoundFile(
+  sound: BackgroundSound,
+  hasPremiumAccess: boolean = false
+): { subdirectory: string; filename: string } | null {
+  const files = optimizedBackgroundSoundFiles[sound];
+  if (!files || files.length === 0) {
+    return null;
+  }
+  
+  // Filter to only free files if user doesn't have premium access
+  const availableFiles = hasPremiumAccess 
+    ? files 
+    : files.filter(file => !file.isPremium);
+  
+  if (availableFiles.length === 0) {
+    return null;
+  }
+  
+  // Return a random file for variety (can be made deterministic if needed)
+  const randomIndex = Math.floor(Math.random() * availableFiles.length);
+  const selected = availableFiles[randomIndex];
+  return { subdirectory: selected.subdirectory, filename: selected.filename };
+}
+
+/**
+ * Get a legacy background sound file name
+ * Returns the first available legacy file
+ */
+export function getLegacyBackgroundSoundFileName(sound: BackgroundSound): string | null {
+  return legacyBackgroundSoundFileNames[sound];
+}
+
+/**
  * Get background sound file name
+ * @deprecated Use getOptimizedBackgroundSoundFile or getLegacyBackgroundSoundFileName instead
  */
 export function getBackgroundSoundFileName(sound: BackgroundSound): string | null {
-  return backgroundSoundFileNames[sound];
+  return legacyBackgroundSoundFileNames[sound];
 }
 
 /**
@@ -177,11 +258,56 @@ export function getBinauralBeatUrl(category: BinauralCategory, backendUrl: strin
 }
 
 /**
- * Get URL for a background sound file (served from backend)
+ * Get URL for an optimized background sound file (served from backend)
+ * Uses the optimized 3-minute M4A file with subdirectory path
+ * Filters out premium files if user doesn't have premium access
  */
-export function getBackgroundSoundUrl(sound: BackgroundSound, backendUrl: string): string | null {
-  const fileName = getBackgroundSoundFileName(sound);
+export function getOptimizedBackgroundSoundUrl(
+  sound: BackgroundSound, 
+  backendUrl: string,
+  hasPremiumAccess: boolean = false
+): string | null {
+  const file = getOptimizedBackgroundSoundFile(sound, hasPremiumAccess);
+  if (!file) {
+    console.warn(`[audioFiles] No file available for background sound: ${sound} (premium: ${hasPremiumAccess})`);
+    return null;
+  }
+  // Include subdirectory in the path
+  const url = `${backendUrl}/api/audio/background/${encodeURIComponent(file.subdirectory)}/${encodeURIComponent(file.filename)}`;
+  console.log(`[audioFiles] Generated background sound URL:`, { sound, file, url, hasPremiumAccess });
+  return url;
+}
+
+/**
+ * Get URL for a legacy background sound file (served from backend)
+ * Uses the original MP3 file name
+ */
+export function getLegacyBackgroundSoundUrl(sound: BackgroundSound, backendUrl: string): string | null {
+  const fileName = getLegacyBackgroundSoundFileName(sound);
   if (!fileName) return null;
   return `${backendUrl}/api/audio/background/${encodeURIComponent(fileName)}`;
+}
+
+/**
+ * Get URL for a background sound file (served from backend)
+ * Prefers optimized files, falls back to legacy files
+ * Filters out premium files if user doesn't have premium access
+ */
+export function getBackgroundSoundUrl(
+  sound: BackgroundSound, 
+  backendUrl: string, 
+  useOptimized: boolean = true,
+  hasPremiumAccess: boolean = false
+): string | null {
+  if (useOptimized) {
+    try {
+      const url = getOptimizedBackgroundSoundUrl(sound, backendUrl, hasPremiumAccess);
+      if (url) return url;
+    } catch (error) {
+      // Fall back to legacy if optimized files are not available
+      console.warn(`Optimized background sound file not found for ${sound}, falling back to legacy`);
+    }
+  }
+  return getLegacyBackgroundSoundUrl(sound, backendUrl);
 }
 

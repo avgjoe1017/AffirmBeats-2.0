@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import {
   generateSessionRequestSchema,
   type GenerateSessionResponse,
@@ -19,42 +20,115 @@ import { logger, loggers } from "../lib/logger";
 import { metricHelpers } from "../lib/metrics";
 import { getCached, deleteCache, deleteCachePattern } from "../lib/redis";
 import { env } from "../env";
+import { matchOrGenerate } from "../lib/affirmationMatcher";
+import { generateAffirmationAudio } from "../utils/affirmationAudio";
 
 const sessionsRouter = new Hono<AppType>();
 
 // Initialize OpenAI client (if API key is available)
 const openai = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
 
-// Affirmation prompts for each goal type
-const AFFIRMATION_PROMPTS = {
-  sleep: `Write 6 short, declarative affirmations in FIRST PERSON about sleep and rest.
-- Exactly 6 lines, each ≤ 10 words.
-- Present tense, no metaphors, no therapy or medical claims.
-- Tone: sleepy, calming, gentle.
-- Start affirmations with "I am" or "I" or "My".
-Output: plaintext lines, no numbering, one line per affirmation.`,
-
-  focus: `Write 6 short, declarative affirmations in FIRST PERSON about focus and productivity.
-- Exactly 6 lines, each ≤ 10 words.
-- Present tense, no metaphors, no therapy or medical claims.
-- Tone: energizing, confident, motivating.
-- Start affirmations with "I am" or "I" or "My".
-Output: plaintext lines, no numbering, one line per affirmation.`,
-
-  calm: `Write 6 short, declarative affirmations in FIRST PERSON about peace and calm.
-- Exactly 6 lines, each ≤ 10 words.
-- Present tense, no metaphors, no therapy or medical claims.
-- Tone: gentle, reassuring, peaceful.
-- Start affirmations with "I am" or "I" or "My".
-Output: plaintext lines, no numbering, one line per affirmation.`,
-
-  manifest: `Write 6 short, declarative affirmations in FIRST PERSON about manifestation, abundance, and achieving goals.
-- Exactly 6 lines, each ≤ 10 words.
-- Present tense, no metaphors, no therapy or medical claims.
-- Tone: powerful, confident, abundant, empowering.
-- Start affirmations with "I am" or "I" or "My".
-Output: plaintext lines, no numbering, one line per affirmation.`,
+// Default user intentions for each goal type (used when no custom prompt is provided)
+const DEFAULT_INTENTIONS = {
+  sleep: "I want to release the day and welcome deep, restorative rest",
+  focus: "I want to sharpen my focus and complete my tasks with clarity and purpose",
+  calm: "I want to find peace and center myself in the present moment",
+  manifest: "I want to create and receive the abundance and success I'm working toward",
 };
+
+/**
+ * Creates a personalized affirmation prompt based on user intention and goal
+ */
+export function createAffirmationPrompt(
+  userIntention: string,
+  goal: "sleep" | "focus" | "calm" | "manifest"
+): string {
+  const styleGuides = {
+    sleep: "Focus on release, relaxation, and peace. Use calming language.",
+    focus: "Emphasize clarity, capability, and completion. Use action-oriented language.",
+    calm: "Center on presence, acceptance, and groundedness. Stay in the NOW.",
+    manifest: "Balance desire with deserving. Use magnetic, receiving language.",
+  };
+
+  const toneExamples = {
+    sleep: "I release the day and welcome deep rest\nI am safe, supported, and at peace",
+    focus: "I complete what I start with clarity\nI am capable of achieving this goal",
+    calm: "I breathe and center myself right now\nI am grounded in this present moment",
+    manifest: "I am ready to receive what I desire\nI deserve the abundance I'm creating",
+  };
+
+  return `You are an expert affirmation writer specializing in ${goal} and personal transformation.
+
+USER'S SPECIFIC INTENTION:
+
+"${userIntention}"
+
+Your task: Create 6-10 affirmations that feel personally crafted for THIS person's unique situation.
+
+CRITICAL REQUIREMENTS:
+
+1. FIRST PERSON ONLY: Start with "I am", "I", or "My"
+
+2. PRESENT TENSE: Write as if it's already happening now
+
+3. ULTRA-SPECIFIC: Reference their exact words/situation - not generic platitudes
+
+4. CONCISE: Maximum 12 words per affirmation
+
+5. VARIED STRUCTURE: Mix "I am" / "I [verb]" / "My [noun]" - don't repeat patterns
+
+6. EMOTIONAL: Make them FEEL something, not just read words
+
+7. NO FLUFF: No therapy jargon, medical claims, or abstract metaphors
+
+STYLE GUIDE FOR ${goal.toUpperCase()}:
+
+${styleGuides[goal]}
+
+TONE EXAMPLES (for inspiration):
+
+${toneExamples[goal]}
+
+AVOID THESE MISTAKES:
+
+❌ "I am abundant" (too vague)
+
+❌ "I attract wealth effortlessly" (sounds like magic, not empowering)
+
+❌ "The universe provides" (not first person)
+
+❌ "Money flows to me like water" (we said no metaphors!)
+
+INSTEAD, MAKE THEM CONCRETE:
+
+✅ "I am building financial security"
+
+✅ "I take actions that create the income I need"
+
+✅ "I deserve to be paid for the value I provide"
+
+STRUCTURAL VARIETY:
+
+- At least 2 start with "I am [quality/state]"
+
+- At least 2 start with "I [action verb]"
+
+- At least 1 starts with "My [noun]"
+
+- Mix 6-8 word affirmations with 9-12 word affirmations
+
+- No more than 2 consecutive lines with the same opening
+
+OUTPUT FORMAT:
+
+Plain text only. One affirmation per line. No numbering. No bullets. No markdown.
+
+Between 6-10 total lines.
+
+Now create deeply personalized affirmations for: "${userIntention}"
+
+Remember: These should feel like they were written FOR this person, not AT this person.`;
+}
 
 // Fallback affirmations when OpenAI is unavailable
 const FALLBACK_AFFIRMATIONS = {
@@ -93,7 +167,7 @@ const FALLBACK_AFFIRMATIONS = {
 };
 
 // Default sessions for all users (especially guests)
-const DEFAULT_SESSIONS = [
+export const DEFAULT_SESSIONS = [
   {
     id: "default-sleep-1",
     title: "Evening Wind Down",
@@ -148,7 +222,7 @@ const DEFAULT_SESSIONS = [
       "I feel calmer, softer, and more centered now.",
       "I move forward with a clearer mind and a relaxed body.",
     ],
-    voiceId: "whisper",
+    voiceId: "premium1",
     pace: "slow",
     noise: "rain",
     lengthSec: 420,
@@ -169,7 +243,7 @@ const DEFAULT_SESSIONS = [
       "I am drifting into peaceful, healing sleep.",
       "I wake up renewed, restored, and replenished.",
     ],
-    voiceId: "whisper",
+    voiceId: "premium1",
     pace: "slow",
     noise: "rain",
     lengthSec: 900,
@@ -280,7 +354,7 @@ const DEFAULT_SESSIONS = [
       "See yourself doing it not in the future, but as if it's already your norm. Take one more slow breath.",
       "Let the identity settle into your body. You're not becoming someone new. You're remembering who you're capable of being. This is already inside you.",
     ],
-    voiceId: "whisper",
+    voiceId: "premium1",
     pace: "slow",
     noise: "rain",
     lengthSec: 600,
@@ -330,7 +404,7 @@ const DEFAULT_SESSIONS = [
       "Feel the subtle expansion across your ribs as you inhale. Feel the soft release as you exhale.",
       "You are safe. You are steady. You are ready to receive.",
     ],
-    voiceId: "whisper",
+    voiceId: "premium1",
     pace: "slow",
     noise: "rain",
     lengthSec: 480,
@@ -430,7 +504,7 @@ const DEFAULT_SESSIONS = [
       "Let each phrase land gently. Your mind absorbs far more than it analyzes.",
       "Take one last slow breath. Feel the statements settle into the space beneath your awareness.",
     ],
-    voiceId: "whisper",
+    voiceId: "premium1",
     pace: "slow",
     noise: "brown",
     lengthSec: 480,
@@ -503,7 +577,7 @@ const DEFAULT_SESSIONS = [
       "Take a slow breath in and a soft breath out.",
       "You are enough. You are safe. You are worthy. Let that truth settle in your body.",
     ],
-    voiceId: "whisper",
+    voiceId: "premium1",
     pace: "slow",
     noise: "rain",
     lengthSec: 480,
@@ -514,52 +588,99 @@ const DEFAULT_SESSIONS = [
   },
 ];
 
-// Generate affirmations using OpenAI or fallback
+// Generate affirmations using hybrid system (exact match → pooled → generated)
 async function generateAffirmations(
   goal: "sleep" | "focus" | "calm" | "manifest",
-  customPrompt?: string
+  customPrompt?: string,
+  userId?: string,
+  isFirstSession: boolean = false
+): Promise<{
+  affirmations: string[];
+  matchType: "exact" | "pooled" | "generated" | "fallback";
+  affirmationIds?: string[];
+  templateId?: string;
+  cost: number;
+}> {
+  // Use custom prompt if provided, otherwise use default intention for the goal
+  const userIntention = customPrompt || DEFAULT_INTENTIONS[goal];
+
+  // Use hybrid matching system
+  const matchResult = await matchOrGenerate(userIntention, goal, userId, isFirstSession);
+
+  return {
+    affirmations: matchResult.affirmations,
+    matchType: matchResult.type,
+    affirmationIds: matchResult.affirmationIds,
+    templateId: matchResult.templateId,
+    cost: matchResult.cost,
+  };
+}
+
+/**
+ * Process affirmations for a session:
+ * 1. Create/update AffirmationLine records
+ * 2. Generate audio for each affirmation
+ * 3. Create SessionAffirmation junction records
+ * Returns array of affirmation IDs
+ */
+async function processSessionAffirmations(
+  affirmations: string[],
+  affirmationIds: string[] | undefined,
+  goal: "sleep" | "focus" | "calm" | "manifest",
+  voiceType: string,
+  pace: "slow" | "normal",
+  sessionId: string,
+  silenceBetweenMs: number = 5000
 ): Promise<string[]> {
-  // Use OpenAI if available
-  if (openai) {
-    try {
-      logger.info("Generating affirmations using OpenAI", { goal, hasCustomPrompt: !!customPrompt });
+  const processedAffirmationIds: string[] = [];
 
-      // If custom prompt is provided, customize the generation
-      const basePrompt = customPrompt
-        ? `The user wants to work on: "${customPrompt}". Create 6-10 affirmations aligned with this goal in the context of ${goal}.
-- Between 6-10 lines, each ≤ 10 words.
-- Present tense, FIRST PERSON, no metaphors, no therapy or medical claims.
-- Start affirmations with "I am" or "I" or "My".
-- Make them specific to the user's intention.
-Output: plaintext lines, no numbering, one line per affirmation.`
-        : AFFIRMATION_PROMPTS[goal];
+  for (let i = 0; i < affirmations.length; i++) {
+    const text = affirmations[i];
+    let affirmationId: string;
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: basePrompt }],
-        temperature: 0.8,
-        max_tokens: 200,
+    // If we have an existing affirmation ID (from library match), use it
+    if (affirmationIds && affirmationIds[i]) {
+      affirmationId = affirmationIds[i];
+    } else {
+      // Create new AffirmationLine record
+      const newAffirmation = await db.affirmationLine.create({
+        data: {
+          text,
+          goal,
+          tags: [], // Can be enhanced later with AI tagging
+        },
       });
-
-      const content = completion.choices[0]?.message?.content || "";
-      const affirmations = content
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0 && !line.match(/^\d+[\.)]/)) // Remove numbering
-        .slice(0, 10); // Allow up to 10 affirmations
-
-      if (affirmations.length >= 6) {
-        logger.info("Generated affirmations via OpenAI", { goal, count: affirmations.length });
-        return affirmations;
-      }
-    } catch (error) {
-      logger.error("OpenAI generation failed", error, { goal });
+      affirmationId = newAffirmation.id;
     }
+
+    // Generate audio for this affirmation (or use cached)
+    try {
+      await generateAffirmationAudio(
+        affirmationId,
+        text,
+        voiceType as any,
+        goal,
+        pace
+      );
+    } catch (error) {
+      logger.error(`Failed to generate audio for affirmation ${affirmationId}`, error);
+      // Continue even if audio generation fails - audio can be generated later
+    }
+
+    // Create SessionAffirmation junction record
+    await db.sessionAffirmation.create({
+      data: {
+        sessionId,
+        affirmationId,
+        position: i + 1, // 1-indexed
+        silenceAfterMs: silenceBetweenMs,
+      },
+    });
+
+    processedAffirmationIds.push(affirmationId);
   }
 
-  // Fallback to predefined affirmations
-  logger.info("Using fallback affirmations", { goal });
-  return FALLBACK_AFFIRMATIONS[goal];
+  return processedAffirmationIds;
 }
 
 // ============================================
@@ -601,8 +722,32 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
     }
   }
 
-  // Generate affirmations with optional custom prompt
-  const affirmations = await generateAffirmations(goal, customPrompt);
+  // Check if this is user's first session
+  const isFirstSession = user
+    ? (await db.affirmationSession.count({ where: { userId: user.id } })) === 0
+    : false;
+
+  // Generate affirmations with optional custom prompt using hybrid system
+  const generationResult = await generateAffirmations(
+    goal,
+    customPrompt,
+    user?.id,
+    isFirstSession
+  );
+
+  // Log the generation for analytics
+  const generationLog = await db.generationLog.create({
+    data: {
+      userId: user?.id || null,
+      userIntent: customPrompt || DEFAULT_INTENTIONS[goal],
+      goal,
+      matchType: generationResult.matchType,
+      affirmationsUsed: generationResult.affirmationIds || generationResult.affirmations,
+      templateId: generationResult.templateId || null,
+      apiCost: generationResult.cost,
+      confidence: generationResult.matchType === "exact" || generationResult.matchType === "pooled" ? 0.8 : 1.0,
+    },
+  });
 
   // Calculate session length based on pace
   const baseLengthSec = 180; // 3 minutes base
@@ -618,6 +763,9 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
   };
   const title = `${goalTitles[goal]} — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
+  // Calculate silence duration (default 5 seconds, can be customized per goal)
+  const silenceBetweenMs = 5000; // 5 seconds default
+
   // Generate a temporary session ID for guest users
   const sessionId = user
     ? (
@@ -626,11 +774,12 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
             userId: user.id,
             goal,
             title,
-            affirmations: JSON.stringify(affirmations),
+            affirmations: JSON.stringify(generationResult.affirmations), // Legacy field
             voiceId: voice,
             pace,
             noise,
             lengthSec,
+            silenceBetweenMs,
             isFavorite: false,
             binauralCategory: binauralCategory || null,
             binauralHz: binauralHz || null,
@@ -639,9 +788,43 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
       ).id
     : `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+  // Process affirmations: create AffirmationLine records, generate audio, create SessionAffirmation records
+  // Only process if user is authenticated (guest sessions don't get persisted audio)
+  if (user) {
+    try {
+      await processSessionAffirmations(
+        generationResult.affirmations,
+        generationResult.affirmationIds,
+        goal,
+        voice,
+        pace as "slow" | "normal",
+        sessionId,
+        silenceBetweenMs
+      );
+    } catch (error) {
+      logger.error("Failed to process session affirmations", error, { sessionId });
+      // Continue anyway - session can still be created, audio can be generated later
+    }
+  }
+
+  // Update generation log with session ID
+  await db.generationLog.update({
+    where: { id: generationLog.id },
+    data: { sessionId: user ? sessionId : null },
+  });
+
   const sessionCreationDuration = Date.now() - sessionGenerationStartTime;
   loggers.sessionCreated(sessionId, user?.id || "guest", goal);
   metricHelpers.sessionCreation(goal, sessionCreationDuration);
+
+  // Log cost savings
+  if (generationResult.matchType !== "generated") {
+    logger.info("Cost saved by using library", {
+      matchType: generationResult.matchType,
+      cost: generationResult.cost,
+      saved: 0.21 - generationResult.cost,
+    });
+  }
 
   // Invalidate user sessions cache if authenticated
   if (user) {
@@ -651,7 +834,7 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
   return c.json({
     sessionId,
     title,
-    affirmations,
+    affirmations: generationResult.affirmations,
     goal,
     voiceId: voice,
     pace,
@@ -892,6 +1075,73 @@ sessionsRouter.get("/", async (c) => {
 });
 
 // ============================================
+// GET /api/sessions/:id/playlist - Get session audio playlist
+// ============================================
+sessionsRouter.get("/:id/playlist", async (c) => {
+  const user = c.get("user");
+  const sessionId = c.req.param("id");
+  const baseUrl = `${c.req.header("x-forwarded-proto") || "http"}://${c.req.header("host") || "localhost:3000"}`;
+
+  logger.info("Fetching session playlist", { sessionId, userId: user?.id || "guest" });
+
+  // Get session
+  const session = await db.affirmationSession.findUnique({
+    where: { id: sessionId },
+    include: {
+      sessionAffirmations: {
+        include: {
+          affirmation: true,
+        },
+        orderBy: { position: "asc" },
+      },
+    },
+  });
+
+  if (!session) {
+    return c.json({
+      error: "NOT_FOUND",
+      code: "NOT_FOUND",
+      message: "Session not found.",
+    }, 404);
+  }
+
+  // Check if user has access (must be owner or it's a default session)
+  if (session.userId && session.userId !== user?.id) {
+    return c.json({
+      error: "FORBIDDEN",
+      code: "FORBIDDEN",
+      message: "You don't have permission to access this session.",
+    }, 403);
+  }
+
+  // Build playlist from SessionAffirmation records
+  const affirmations = session.sessionAffirmations.map((sa) => ({
+    id: sa.affirmationId,
+    text: sa.affirmation.text,
+    audioUrl: sa.affirmation.ttsAudioUrl
+      ? `${baseUrl}${sa.affirmation.ttsAudioUrl}`
+      : null,
+    durationMs: sa.affirmation.audioDurationMs || 0,
+    silenceAfterMs: sa.silenceAfterMs,
+  }));
+
+  // Calculate total duration
+  const totalDurationMs = affirmations.reduce((sum, aff) => {
+    return sum + (aff.durationMs || 0) + aff.silenceAfterMs;
+  }, 0);
+
+  return c.json({
+    sessionId: session.id,
+    totalDurationMs,
+    silenceBetweenMs: session.silenceBetweenMs,
+    affirmations,
+    binauralCategory: session.binauralCategory || undefined,
+    binauralHz: session.binauralHz || undefined,
+    backgroundNoise: session.noise || undefined,
+  });
+});
+
+// ============================================
 // PATCH /api/sessions/:id/favorite - Toggle favorite
 // ============================================
 sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSchema), async (c) => {
@@ -1065,6 +1315,76 @@ sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), asy
   logger.info("Session updated successfully", { sessionId, userId: user.id });
 
   return c.json({ success: true } satisfies UpdateSessionResponse);
+});
+
+// ============================================
+// POST /api/sessions/:id/feedback - Rate session quality
+// ============================================
+sessionsRouter.post("/:id/feedback", zValidator("json", z.object({
+  rating: z.number().min(1).max(5),
+  wasReplayed: z.boolean().optional(),
+})), async (c) => {
+  const user = c.get("user");
+  const sessionId = c.req.param("id");
+  const { rating, wasReplayed } = c.req.valid("json");
+
+  logger.info("Session feedback received", { sessionId, rating, wasReplayed });
+
+  // Find generation log for this session
+  const generationLog = await db.generationLog.findFirst({
+    where: {
+      sessionId: sessionId === "temp" ? null : sessionId,
+      userId: user?.id || null,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (generationLog) {
+    // Update generation log
+    await db.generationLog.update({
+      where: { id: generationLog.id },
+      data: {
+        wasRated: true,
+        userRating: rating,
+        wasReplayed: wasReplayed || false,
+      },
+    });
+
+    // If this was a pooled session and highly rated, boost affirmation ratings
+    if (generationLog.matchType === "pooled" && rating >= 4 && generationLog.affirmationsUsed.length > 0) {
+      // Try to parse affirmation IDs (they might be IDs or full text)
+      const affirmationIds = generationLog.affirmationsUsed.filter(id => id.length < 50); // Likely IDs, not full text
+      
+      if (affirmationIds.length > 0) {
+        await db.affirmationLine.updateMany({
+          where: { id: { in: affirmationIds } },
+          data: {
+            useCount: { increment: 1 },
+            // Update average rating
+            userRating: {
+              // Simple increment - could be more sophisticated
+              increment: 0.1,
+            },
+          },
+        });
+      }
+    }
+
+    // If this was an exact match template, boost template rating
+    if (generationLog.matchType === "exact" && generationLog.templateId && rating >= 4) {
+      await db.sessionTemplate.update({
+        where: { id: generationLog.templateId },
+        data: {
+          useCount: { increment: 1 },
+          userRating: {
+            increment: 0.1,
+          },
+        },
+      });
+    }
+  }
+
+  return c.json({ success: true });
 });
 
 export { sessionsRouter };

@@ -1,7 +1,7 @@
 # Progress Log
 
-**Last Updated**: 2025-01-XX  
-**Status**: All Critical Pre-Launch Blockers Completed ✅
+**Last Updated**: 2025-11-16  
+**Status**: TTS Voice Generation Improvements & Audio Fade-In Implementation 🎙️
 
 ---
 
@@ -22,6 +22,659 @@
 - `MD_DOCS/QA_CHECKLIST_TRACKING.md` - Complete QA tracking
 - `PRODUCTION_INSTRUCTIONS.md` - Production deployment guide
 - `PROGRESS.md` - This file (comprehensive development log)
+
+---
+
+## 2025-11-16 - Goal-Based Voice Configuration & Audio Improvements 🎙️
+
+### Goal-Based TTS Voice Configuration ✅
+
+**Completed Tasks:**
+
+1. **Implemented Goal-Based Voice Settings** ✅
+   - **Location**: `backend/src/routes/tts.ts`
+   - **Added**: `VOICE_CONFIG_BY_GOAL` configuration object
+   - **Features**:
+     - Different voice settings optimized for each goal type (sleep, calm, focus, manifest)
+     - Sleep: Most stable (0.80), slowest speed (0.65)
+     - Calm: Balanced stability (0.75), slower speed (0.70)
+     - Focus: Moderate settings (0.72 stability, 0.75 speed)
+     - Manifest: Slightly faster (0.70 stability, 0.80 speed)
+   - **Implementation**:
+     - `getVoiceSettings()` function applies goal-based configs
+     - Falls back to defaults if goal not provided
+     - Respects pace preference (slow/normal) with multiplier
+
+2. **Updated TTS Endpoint to Accept Goal Parameter** ✅
+   - **Location**: `backend/src/routes/tts.ts`, `shared/contracts.ts`
+   - **Changes**:
+     - Added optional `goal` parameter to `/api/tts/generate-session` endpoint
+     - Updated Zod schema to include goal enum
+     - Goal included in cache key generation for proper caching
+     - Goal-based voice settings applied when generating TTS
+
+3. **Updated Frontend to Pass Goal** ✅
+   - **Location**: `src/utils/audioManager.ts`, `src/screens/PlaybackScreen.tsx`
+   - **Changes**:
+     - `loadAffirmations()` now accepts optional `goal` parameter
+     - PlaybackScreen passes `session.goal` when loading affirmations
+     - Goal properly typed and validated
+
+**Impact:** Voice characteristics now optimized for each meditation goal, providing more appropriate audio experience.
+
+---
+
+### Voice Speed Adjustments ✅
+
+**Completed Tasks:**
+
+1. **Significantly Slowed Down Voice Speeds** ✅
+   - **Location**: `backend/src/routes/tts.ts`
+   - **Changes**:
+     - Sleep: Reduced from 0.82 to 0.65 (20% slower)
+     - Calm: Reduced from 0.88 to 0.70 (20% slower)
+     - Focus: Reduced from 0.93 to 0.75 (19% slower)
+     - Manifest: Reduced from 0.98 to 0.80 (18% slower)
+   - **Pace Multiplier**: Reduced from 0.85 to 0.90 for "slow" pace
+   - **Result**: Voices now speak at much more natural, slower pace
+
+**Impact:** More calming and natural-sounding voice generation, especially for sleep and calm goals.
+
+---
+
+### SSML Break Tag Improvements ✅
+
+**Completed Tasks:**
+
+1. **Enhanced Affirmation Spacing** ✅
+   - **Location**: `backend/src/routes/tts.ts`
+   - **Changes**:
+     - Improved SSML formatting with proper trimming
+     - Break tags properly formatted: `<break time="${affirmationSpacing}s"/>`
+     - Ensures proper spacing between affirmations
+     - Wrapped in `<speak>` tags for SSML support
+
+**Impact:** Affirmations now properly respect the configured spacing between each statement.
+
+---
+
+### Audio Fade-In Timing Implementation ✅
+
+**Completed Tasks:**
+
+1. **Implemented Staggered Audio Start** ✅
+   - **Location**: `src/utils/audioManager.ts`
+   - **Features**:
+     - Binaural beats and background sounds start at volume 0
+     - Fade in over 3 seconds using `setVolumeAsync` with duration
+     - Affirmations start after 5 seconds total (3s fade + 2s wait)
+     - Smooth, professional audio transitions
+
+2. **Updated Audio Loading** ✅
+   - **Location**: `src/utils/audioManager.ts`
+   - **Changes**:
+     - Binaural and background sounds load at volume 0
+     - Volume set during `play()` with fade-in animation
+     - Removed auto-volume setting in useEffect hooks for fade-in tracks
+
+**Impact:** Professional audio experience with smooth fade-ins, preventing abrupt audio starts.
+
+---
+
+### Background Noise Error Handling ✅
+
+**Completed Tasks:**
+
+1. **Made Background Sound Loading Non-Fatal** ✅
+   - **Location**: `src/utils/audioManager.ts`
+   - **Changes**:
+     - Background sound errors no longer crash playback
+     - Added detailed error logging with URL information
+     - Playback continues even if background sound fails to load
+     - Graceful degradation when files are missing
+
+**Impact:** More robust audio playback, handles missing files gracefully.
+
+---
+
+### Fixed TTS 500 Error ✅
+
+**Completed Tasks:**
+
+1. **Removed Unsupported ElevenLabs API Parameters** ✅
+   - **Location**: `backend/src/routes/tts.ts`
+   - **Issue**: Sending `style` and `use_speaker_boost` parameters not supported by ElevenLabs API
+   - **Fix**: Removed unsupported parameters from voice settings
+   - **Result**: Only sending supported parameters: `stability`, `similarity_boost`, `speed`
+
+**Impact:** Fixed 500 errors when generating TTS audio, API calls now succeed.
+
+---
+
+### TTS Cache Endpoints Added ✅
+
+**Completed Tasks:**
+
+1. **Added Cache Management Endpoints** ✅
+   - **Location**: `backend/src/routes/tts.ts` (user-added)
+   - **Endpoints**:
+     - `GET /api/tts/cache/:cacheKey` - Serve cached audio by cache key
+     - `GET /api/tts/cache` - List all cached TTS files with metadata
+   - **Features**:
+     - Direct URL access to cached audio files
+     - Cache key validation (64-character hex string)
+     - Metadata includes file size, access count, timestamps
+     - Proper HTTP headers for audio streaming
+
+**Impact:** Better cache management and debugging capabilities.
+
+---
+
+## 2025-11-16 - Integrated Optimized Background Audio System 🎵
+
+### Smart Background Audio Integration
+
+**Completed Tasks:**
+
+1. **Created Optimized Background Sound Mapping** ✅
+   - **Location**: `src/utils/audioFiles.ts`
+   - **Added**: `optimizedBackgroundSoundFiles` mapping system
+   - **Features**:
+     - Maps user preferences (rain, brown, ocean, forest, wind, fire, thunder) to actual optimized M4A files
+     - Supports multiple files per preference for variety (random selection)
+     - All files are in `assets/audio/background/looped/` directory
+     - All files are loopable M4A format optimized for seamless playback
+
+2. **Updated Background Audio File Functions** ✅
+   - **Location**: `src/utils/audioFiles.ts`
+   - **Added**:
+     - `getOptimizedBackgroundSoundFile()` - Returns random file from available options
+     - `getOptimizedBackgroundSoundUrl()` - Generates URL with subdirectory support
+     - `getBackgroundSoundUrl()` - Updated to prefer optimized files, fallback to legacy
+   - **Smart Features**:
+     - Automatic fallback to legacy files if optimized files unavailable
+     - Random file selection for variety when multiple options exist
+     - Proper URL encoding for subdirectory paths
+
+3. **Updated Backend Audio Route** ✅
+   - **Location**: `backend/src/routes/audio.ts`
+   - **Changed**: 
+     - Route now handles both `/background/filename` and `/background/subdirectory/filename` formats
+     - Serves optimized files from `assets/audio/background/looped/` directory
+     - Falls back to legacy files from `raw audio files/` directory if needed
+     - Proper MIME type handling for M4A files (audio/mp4)
+     - Enhanced caching headers for optimized files
+
+4. **File Mapping Details** ✅
+   - **Rain**: 2 options (Heavy Rain, Forest Rain)
+   - **Brown**: 2 options (Regeneration, Tibetan Om)
+   - **Ocean**: 1 option (Distant Ocean)
+   - **Forest**: 3 options (Forest Rain, Babbling Brook, Birds Chirping)
+   - **Wind**: 1 option (Storm)
+   - **Fire**: 2 options (Regeneration, Tibetan Om)
+   - **Thunder**: 2 options (Thunder, Storm)
+
+5. **Updated to Use Only Looped Folder** ✅
+   - **Location**: `src/utils/audioFiles.ts`
+   - **Changed**: All background sounds now use files from `assets/audio/background/looped/` only
+   - **Files Used**:
+     - Heavy Rain.m4a
+     - Forest Rain.m4a
+     - Babbling Brook.m4a
+     - Evening Walk.m4a
+     - Storm.m4a
+     - Birds Chirping.m4a
+     - Thunder.m4a
+     - Distant Ocean.m4a
+     - Regeneration.m4a
+     - Tibetan Om.m4a
+
+6. **Premium Background Sound Access Control** ✅
+   - **Location**: `src/utils/audioFiles.ts`, `src/screens/SettingsScreen.tsx`, `src/screens/PlaybackScreen.tsx`
+   - **Free Sounds**: Heavy Rain.m4a, Birds Chirping.m4a
+   - **Premium Sounds**: All other background sounds
+   - **Implementation**:
+     - Added `isPremium` flag to background sound file mappings
+     - Updated `getOptimizedBackgroundSoundFile()` to filter premium files for free users
+     - Updated `getBackgroundSoundUrl()` to accept `hasPremiumAccess` parameter
+     - Updated PlaybackScreen to pass subscription status when loading background sounds
+     - Updated SettingsScreen: "rain" and "forest" are now free (use free files), all others are premium
+   - **Behavior**:
+     - Free users selecting "rain" get "Heavy Rain.m4a" (free file)
+     - Free users selecting "forest" get "Birds Chirping.m4a" (free file)
+     - Premium users get random selection from all available files for each preference
+
+**Technical Details:**
+- All background audio files are loopable M4A format (3.8-4.3 MB each)
+- Files are optimized for seamless looping
+- AudioManager already configured with `isLooping: true` for background sounds
+- System automatically selects random file from available options for variety
+- Backward compatible with legacy file system
+
+**File Structure:**
+```
+assets/audio/background/
+  └── looped/ (10 files)
+      ├── Heavy Rain.m4a
+      ├── Forest Rain.m4a
+      ├── Babbling Brook.m4a
+      ├── Evening Walk.m4a
+      ├── Storm.m4a
+      ├── Birds Chirping.m4a
+      ├── Thunder.m4a
+      ├── Distant Ocean.m4a
+      ├── Regeneration.m4a
+      └── Tibetan Om.m4a
+```
+
+---
+
+## 2025-11-16 - Added 8 Premium Voices and Removed Whisper 🎤
+
+### Added Premium Voices to Pro Plan
+
+**Completed Tasks:**
+
+1. **Added 8 New Premium Voices** ✅
+   - **Location**: `backend/src/routes/tts.ts`
+   - **Added**: 8 new premium voices with IDs extracted from ElevenLabs share URLs:
+     - `premium1`: `qxTFXDYbGcR8GaHSjczg`
+     - `premium2`: `BpjGufoPiobT79j2vtj4`
+     - `premium3`: `eUdJpUEN3EslrgE24PKx`
+     - `premium4`: `7JxUWWyYwXK8kmqmKEnT`
+     - `premium5`: `wdymxIQkYn7MJCYCQF2Q`
+     - `premium6`: `zA6D7RyKdc2EClouEMkP`
+     - `premium7`: `KGZeK6FsnWQdrkDHnDNA`
+     - `premium8`: `wgHvco1wiREKN0BdyVx5`
+   - **Status**: All 8 voices require Pro subscription
+   - **Note**: Voice names and genders need to be updated with actual information
+
+2. **Removed Whisper Voice** ✅
+   - **Removed from**: All voice configurations, enums, and default sessions
+   - **Replaced in default sessions**: Changed from `whisper` to `premium1`
+
+3. **Updated Voice Type Enums** ✅
+   - **Location**: `shared/contracts.ts`, `backend/src/routes/tts.ts`, `backend/src/routes/admin.ts`
+   - **Changed**: All voice type enums now include `premium1` through `premium8` instead of `whisper`
+
+4. **Updated Settings Screen** ✅
+   - **Location**: `src/screens/SettingsScreen.tsx`
+   - **Added**: 8 new premium voice options in the voice selector
+   - **Display**: Shows as "Premium Voice 1" through "Premium Voice 8" (to be updated with actual names and genders)
+
+5. **Updated Admin Dashboard** ✅
+   - **Location**: `backend/src/routes/admin.ts`, `backend/public/admin-voice-settings.html`
+   - **Changed**: Admin config and voice settings dashboard now show all 10 voices (2 free + 8 premium)
+
+6. **Updated Database Schema Comments** ✅
+   - **Location**: `backend/prisma/schema.prisma`
+   - **Changed**: Updated comment to reflect new voice types
+
+**Technical Details:**
+- Voice type enum values now include: `neutral`, `confident`, `premium1`, `premium2`, `premium3`, `premium4`, `premium5`, `premium6`, `premium7`, `premium8`
+- All premium voices require Pro subscription (enforced in backend)
+- Default sessions that previously used `whisper` now use `premium1`
+
+7. **Updated Premium Voice Names with Gender Indicators** ✅
+   - **Location**: `src/screens/SettingsScreen.tsx`, `backend/src/routes/tts.ts`, `backend/public/admin-voice-settings.html`
+   - **Updated**: All 8 premium voices now display with actual names and gender indicators:
+     - `premium1`: James (M)
+     - `premium2`: Priyanka (F)
+     - `premium3`: Rhea (F)
+     - `premium4`: Chuck (M)
+     - `premium5`: Zara (F)
+     - `premium6`: Almee (F)
+     - `premium7`: Kristen (F)
+     - `premium8`: Drew (M)
+
+---
+
+## 2025-11-16 - Updated Default Voices to Mira and Archer 🎤
+
+### Set New Default Voices
+
+**Completed Tasks:**
+
+1. **Updated Voice IDs in TTS Route** ✅
+   - **Location**: `backend/src/routes/tts.ts`
+   - **Changed**: 
+     - `neutral` voice ID updated to `ZqvIIuD5aI9JFejebHiH` (Mira (F) - Female)
+     - `confident` voice ID updated to `xGDJhCwcqw94ypljc95Z` (Archer (M) - Male)
+   - **Purpose**: Mira (F) is optimized for meditation, calming down, and relaxing. Archer (M) is optimized for guided meditation and narration.
+
+2. **Updated Voice Labels in Settings Screen** ✅
+   - **Location**: `src/screens/SettingsScreen.tsx`
+   - **Changed**: 
+     - "Neutral" → "Mira (F)" with description "Meditation, Calming Down, Relaxing"
+     - "Confident" → "Archer (M)" with description "Guided Meditation & Narration"
+   - **Note**: Internal voice type values (`neutral`, `confident`) remain unchanged for API compatibility. Display names now include gender indicators (F) and (M) for clarity.
+
+3. **Updated Admin Configuration** ✅
+   - **Location**: `backend/src/routes/admin.ts`
+   - **Changed**: Updated voice IDs in both the `/api/admin/config` endpoint and the `/api/admin/voice/test` endpoint to match the new default voices
+
+**Technical Details:**
+- Voice type enum values (`neutral`, `confident`, `whisper`) remain unchanged to maintain API compatibility
+- Only the underlying ElevenLabs voice IDs were updated
+- Display names updated to show "Mira (F)" and "Archer (M)" with gender indicators
+- Default voice preference remains `neutral` (now mapped to Mira (F))
+- All existing user preferences will automatically use the new voices
+
+---
+
+## 2025-11-16 - Admin Dashboard Critical Optimizations 🚨
+
+### Enhanced Error Tracking & Monitoring
+
+**Completed Tasks:**
+
+1. **Error Breakdown by Type** ✅
+   - **Location**: `backend/src/routes/admin.ts`, `backend/public/admin-dashboard.html`
+   - **Added**: 
+     - Error breakdown by status code (400s, 401, 403, 404, 500s, timeouts, other)
+     - Recent errors detail view (last 10 errors with timestamps, paths, methods, status codes)
+     - Clickable "View Last N Errors" button in dashboard
+   - **Features**:
+     - Color-coded error types (4xx = yellow, 5xx = red)
+     - Modal popup showing detailed error table
+     - Real-time error tracking from metrics system
+
+2. **Trend Indicators** ✅
+   - **Location**: `backend/src/routes/admin.ts`, `backend/public/admin-dashboard.html`
+   - **Added**: 
+     - Day-over-day comparison for all metrics
+     - Trend arrows (↑↓) with percentage change
+     - Color-coded trends (green for positive, red for negative)
+   - **Metrics Tracked**:
+     - Active Users (↑↓ % change)
+     - Revenue Today (↑↓ % change)
+     - Sessions Generated (↑↓ % change)
+     - API Cost Today (↑↓ % change)
+     - Error Rate (↑↓ % change)
+
+3. **Enhanced Error Rate Alerts** ✅
+   - **Location**: `backend/src/routes/admin.ts`
+   - **Added**:
+     - Critical alert when error rate > 2% (🚨 CRITICAL)
+     - Warning alert when error rate > 0.5% (⚠️ Monitor)
+     - Automatic comparison with yesterday's error rate
+
+**Technical Details:**
+- Error tracking uses existing metrics system (`api.error.count`, `api.request.count`)
+- Breakdown groups errors by status code from metric tags
+- Trend calculations compare last 24h vs previous 24h period
+- All comparisons handle edge cases (zero values, missing data)
+
+**Next Steps:**
+- Add error trend graph (line chart showing error rate over time)
+- Implement alert notifications (email/Slack when thresholds exceeded)
+- Add confidence score distribution to cost breakdown
+
+---
+
+## 2025-11-16 - Additional Admin Dashboard Enhancements 🎨
+
+### Quality Indicators & Failed Generation Tracking
+
+**Completed Tasks:**
+
+1. **Quality Indicators in Affirmation Library** ✅
+   - **Location**: `backend/public/admin-affirmations.html`
+   - **Added**: 
+     - Visual badges: 🔥 High Usage (>50 uses), ⭐ High Rated (>4.5), ⚠️ Low Rated (<3.0), 🆕 New (<7d)
+     - Color-coded borders: Green (4.0+), Yellow (3.0-4.0), Red (<3.0)
+     - Color-coded rating display
+   - **Features**:
+     - Instant visual feedback on affirmation quality
+     - Easy identification of high-performing vs. low-performing affirmations
+     - New affirmations highlighted for review
+
+2. **Failed Generations Section** ✅
+   - **Location**: `backend/public/admin-logs.html`
+   - **Added**: 
+     - Separate section showing unmatched intents (generated type)
+     - Grouped by intent to identify patterns
+     - Cost tracking for failed generations
+     - "Create Template" button for frequently unmatched intents
+   - **Features**:
+     - Shows top 10 most frequent unmatched intents
+     - Displays failure count and total cost per intent
+     - One-click template creation from failed intent
+     - Helps identify template coverage gaps
+
+3. **System Config Safe Ranges** ✅
+   - **Location**: `backend/public/admin-config.html`
+   - **Added**: 
+     - Real-time threshold indicators (Safe/Caution/Danger)
+     - Visual feedback when values are outside recommended ranges
+     - Safe range guidelines: Exact Match (0.65-0.85), Pooled (0.60-0.80)
+     - "Test Configuration" button (placeholder for future feature)
+   - **Features**:
+     - Color-coded indicators update as you type
+     - Prevents accidental configuration of dangerous values
+     - Clear visual guidance on safe operating ranges
+
+**Technical Details:**
+- Quality badges use CSS classes for consistent styling
+- Failed generations analysis runs client-side for performance
+- Threshold indicators use JavaScript validation with real-time feedback
+- All enhancements maintain existing functionality
+
+---
+
+## 2025-11-16 - Export Functionality & Enhanced Analytics 📊
+
+### Export Buttons & Enhanced Cost Breakdown
+
+**Completed Tasks:**
+
+1. **Export Buttons on All Admin Pages** ✅
+   - **Location**: `backend/public/admin-*.html`, `backend/src/routes/admin.ts`
+   - **Added**: 
+     - Export CSV buttons on Affirmations, Users, Templates, and Logs pages
+     - Enhanced export endpoint to support `affirmations` and `templates` types
+     - Goal filtering for affirmation exports
+     - Comprehensive CSV formatting with proper escaping
+   - **Features**:
+     - One-click export of all data views
+     - Respects current filters (e.g., goal filter for affirmations)
+     - Includes all relevant fields (tags, ratings, usage stats, etc.)
+
+2. **Confidence Score Distribution** ✅
+   - **Location**: `backend/src/routes/admin.ts`, `backend/public/admin-dashboard.html`
+   - **Added**: 
+     - Visual histogram showing confidence score buckets (0.9-1.0, 0.8-0.9, etc.)
+     - Color-coded bars (green for exact, purple for pooled)
+     - Session counts per bucket
+   - **Features**:
+     - Helps identify threshold effectiveness
+     - Shows distribution of match quality
+     - Visual representation of matching performance
+
+3. **Template Coverage Metrics** ✅
+   - **Location**: `backend/src/routes/admin.ts`, `backend/public/admin-dashboard.html`
+   - **Added**: 
+     - Matched vs. unmatched intent tracking
+     - Coverage percentage with color-coded progress bar
+     - Suggestions for template creation
+   - **Features**:
+     - Real-time coverage percentage
+     - Visual indicator (green/yellow/red based on coverage)
+     - Actionable insights (suggests creating N templates)
+
+4. **Enhanced Bulk Operations** ✅
+   - **Location**: `backend/public/admin-affirmations.html`, `backend/src/routes/admin.ts`
+   - **Added**: 
+     - Modal-based bulk actions UI (replaces prompt-based)
+     - Fixed bulk tag update (now properly merges with existing tags)
+     - Bulk regenerate audio functionality
+     - `deleteAllCache()` function in TTS cache utility
+   - **Features**:
+     - Better UX with modal dialog
+     - Tag merging prevents overwriting existing tags
+     - Audio regeneration invalidates cache for selected affirmations
+     - All bulk operations show success/error feedback
+
+**Technical Details:**
+- Export endpoint uses dynamic CSV generation based on type
+- Confidence distribution calculated from GenerationLog confidence scores
+- Template coverage samples last 1000 intents for performance
+- Bulk tag update fetches current tags before merging
+- Cache invalidation deletes both database entries and disk files
+
+---
+
+## 2025-11-16 - Error Trend Graph Visualization 📈
+
+### Complete Error Monitoring System
+
+**Completed Tasks:**
+
+1. **Error Trend Graph** ✅
+   - **Location**: `backend/src/routes/admin.ts`, `backend/public/admin-dashboard.html`
+   - **Added**: 
+     - New API endpoint `/api/admin/error-trend` for historical error rate data
+     - SVG-based line chart visualization in dashboard
+     - Time range selector (7, 14, 30 days)
+     - Automatic bucket sizing (hourly for ≤7 days, daily for >7 days)
+   - **Features**:
+     - Visual line chart showing error rate trends over time
+     - Color-coded data points (green <0.5%, yellow 0.5-2%, red >2%)
+     - Reference lines for warning (0.5%) and critical (2%) thresholds
+     - Gradient area fill for visual impact
+     - Grid lines and axis labels for readability
+     - Auto-refreshes with dashboard (every 5 minutes)
+
+**Technical Details:**
+- Backend groups metrics into time buckets (hourly or daily)
+- Calculates error rate per bucket: (errors / requests) * 100
+- Frontend uses SVG for lightweight, dependency-free charting
+- Chart scales automatically based on data range
+- Handles edge cases (no data, single data point, etc.)
+
+**Visual Features:**
+- Red line with gradient fill for error rate
+- Dashed reference lines at 0.5% (warning) and 2% (critical)
+- Color-coded data points based on severity
+- Responsive design that adapts to container width
+- Legend showing threshold meanings
+
+---
+
+## 2025-01-27 - Updated OpenAI Affirmation Generation Prompt 🎯
+
+### Enhanced Affirmation Generation with New Prompt System
+
+**Completed Tasks:**
+
+1. **Replaced Old Prompt System with New `createAffirmationPrompt` Function** ✅
+   - **Location**: `backend/src/routes/sessions.ts`
+   - **Removed**: Old `AFFIRMATION_PROMPTS` object with basic prompts
+   - **Added**: New `createAffirmationPrompt()` function with comprehensive prompt engineering
+   - **Features**:
+     - Ultra-specific affirmations that reference user's exact words/situation
+     - Structural variety requirements (mix of "I am", "I [verb]", "My [noun]")
+     - Maximum 12 words per affirmation (increased from 10)
+     - Emotional depth and concrete language (no vague platitudes)
+     - Style guides and tone examples for each goal type
+     - Clear examples of what to avoid vs. what to do
+
+2. **Updated `generateAffirmations` Function** ✅
+   - **Changed**: Now uses `createAffirmationPrompt()` for all generations
+   - **Added**: `DEFAULT_INTENTIONS` object for when no custom prompt is provided
+   - **Enhanced**: Response parsing to filter out bullet points and numbering
+   - **Increased**: `max_tokens` from 200 to 300 to accommodate longer, more detailed affirmations
+   - **Maintained**: Fallback system still works if OpenAI fails
+
+3. **Improved Prompt Quality** ✅
+   - More personalized and specific affirmations
+   - Better structural variety (prevents repetitive patterns)
+   - Clearer guidance on avoiding generic language
+   - Examples of good vs. bad affirmations included in prompt
+
+**Impact**: Affirmations generated will now be more personalized, varied, and emotionally resonant, with better adherence to the specific user's intention and goal type.
+
+---
+
+## 2025-01-27 - Implemented Hybrid Affirmation Library System 💰
+
+### Cost Optimization Through Intelligent Matching
+
+**Completed Tasks:**
+
+1. **Database Schema Updates** ✅
+   - **Location**: `backend/prisma/schema.prisma`
+   - **Added**: `AffirmationLine` model for individual affirmation pool
+   - **Added**: `SessionTemplate` model for pre-built session templates
+   - **Added**: `GenerationLog` model for tracking generation analytics
+   - **Features**:
+     - Tags and emotion fields for semantic matching
+     - Use count and rating tracking for quality metrics
+     - Intent keywords for exact matching
+     - Cost tracking per generation
+
+2. **Affirmation Matching Library** ✅
+   - **Location**: `backend/src/lib/affirmationMatcher.ts`
+   - **Implemented**: Three-tier hybrid system:
+     - **Tier 1 (Exact Match)**: Pre-built templates for common intents (cost: $0)
+     - **Tier 2 (Pooled)**: Combine existing affirmations from pool (cost: $0.10, TTS only)
+     - **Tier 3 (Generated)**: Full AI generation for unique requests (cost: $0.21)
+   - **Features**:
+     - Keyword-based exact matching using PostgreSQL array operations
+     - Theme extraction using OpenAI for semantic matching
+     - Diverse selection algorithm to avoid repetitive affirmations
+     - Confidence scoring for match quality
+     - Automatic saving of generated affirmations to pool
+
+3. **Updated Generation Flow** ✅
+   - **Location**: `backend/src/routes/sessions.ts`
+   - **Changed**: `generateAffirmations()` now uses hybrid matching system
+   - **Added**: First session detection (always generates for best impression)
+   - **Added**: Generation logging for analytics and cost tracking
+   - **Added**: Cost savings logging when using library matches
+   - **Maintained**: Backward compatibility with existing API
+
+4. **Feedback & Rating System** ✅
+   - **Location**: `backend/src/routes/sessions.ts` (POST `/api/sessions/:id/feedback`)
+   - **Features**:
+     - User rating (1-5 stars) and replay tracking
+     - Automatic quality boosting for highly-rated pooled affirmations
+     - Template rating updates for exact matches
+     - Analytics for continuous improvement
+
+5. **Seed Script** ✅
+   - **Location**: `backend/scripts/seed-affirmation-library.ts`
+   - **Purpose**: Populate initial affirmation pool from default sessions
+   - **Features**:
+     - Extracts affirmations from existing default sessions
+     - Creates session templates for common intents
+     - Keyword and theme extraction for matching
+     - Idempotent (safe to run multiple times)
+
+**Expected Cost Savings:**
+- **Month 1-2**: Build library (high cost, but building assets)
+- **Month 3-4**: 50% pooled, 50% generated → ~50% cost reduction
+- **Month 5-6**: 70% pooled, 30% generated → ~60% cost reduction
+- **Month 7+**: 85% pooled, 15% generated → ~85% cost reduction
+
+**At Scale (10,000 sessions/month):**
+- **Without optimization**: $2,100/month in API costs
+- **With optimization**: ~$315/month in API costs
+- **Savings**: $1,785/month = $21,420/year
+
+**Next Steps:**
+1. ✅ Run database migration: `bunx prisma migrate dev --name add_affirmation_library`
+2. ✅ Seed initial library: `bun run backend/scripts/seed-affirmation-library.ts`
+3. ✅ Test hybrid system: `bun run backend/scripts/test-hybrid-system.ts`
+4. Monitor generation logs to track cost savings
+5. Gradually increase pooled percentage as library grows
+
+**Test Results (2025-01-27):**
+- ✅ Exact match working: "help me sleep better" → matched template (cost: $0.00, 100% savings!)
+- ✅ Generation working: Unique requests generate and save to pool automatically
+- ✅ Library growing: Started with 24 affirmations, now 44 (growing with each generation)
+- ✅ Cost tracking: Generation logs recording match types and costs correctly
+- 📊 Current stats: 44 affirmations in pool, 4 session templates
 
 ---
 

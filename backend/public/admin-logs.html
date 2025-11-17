@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generation Logs - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: #1a1a2e;
+            border-right: 1px solid #2a2a3e;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            color: #8b7ab8;
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #9e9eb0;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            background: #2a2a3e;
+            color: #e0e0e0;
+        }
+        .nav-item.active {
+            background: #8b7ab8;
+            color: white;
+        }
+        .nav-item .icon {
+            font-size: 20px;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+        h1 { color: #8b7ab8; margin-bottom: 10px; }
+        .subtitle { color: #9e9eb0; margin-bottom: 20px; }
+        .toolbar {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .toolbar input, .toolbar select {
+            background: #0f0f1e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .btn {
+            background: #8b7ab8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover { background: #6b5a98; }
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1a1a2e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .logs-table th {
+            background: #2a2a3e;
+            color: #8b7ab8;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        .logs-table td {
+            padding: 12px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .logs-table tr:hover {
+            background: #252538;
+        }
+        .match-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .match-exact { background: #1e3f2e; color: #4ade80; }
+        .match-pooled { background: #1e2e3f; color: #60a5fa; }
+        .match-generated { background: #3f2e1e; color: #fbbf24; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Admin Panel</h2>
+            <a href="/admin" class="nav-item">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="/admin/affirmations" class="nav-item">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="/admin/users" class="nav-item">
+                <span class="icon">👥</span>
+                <span>Users</span>
+            </a>
+            <a href="/admin/logs" class="nav-item active">
+                <span class="icon">📊</span>
+                <span>Logs</span>
+            </a>
+            <a href="/admin/templates" class="nav-item">
+                <span class="icon">🎨</span>
+                <span>Templates</span>
+            </a>
+            <a href="/admin/default-sessions" class="nav-item">
+                <span class="icon">🎯</span>
+                <span>Defaults</span>
+            </a>
+            <a href="/admin/voice-settings" class="nav-item">
+                <span class="icon">🎤</span>
+                <span>Voice</span>
+            </a>
+            <a href="/admin/config" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>Config</span>
+            </a>
+        </div>
+
+        <div class="main-content">
+            <div style="margin-bottom: 20px;">
+                <h1>📊 Generation Logs</h1>
+                <p class="subtitle">View detailed generation history</p>
+            </div>
+
+            <div class="toolbar">
+            <input type="date" id="startDate">
+            <input type="date" id="endDate">
+            <select id="goalFilter">
+                <option value="">All Goals</option>
+                <option value="sleep">Sleep</option>
+                <option value="focus">Focus</option>
+                <option value="calm">Calm</option>
+                <option value="manifest">Manifest</option>
+            </select>
+            <select id="matchTypeFilter">
+                <option value="">All Types</option>
+                <option value="exact">Exact Match</option>
+                <option value="pooled">Pooled</option>
+                <option value="generated">Generated</option>
+            </select>
+            <button class="btn" onclick="loadLogs()">🔍 Filter</button>
+            <a href="/api/admin/export?type=sessions" class="btn" download>📥 Export CSV</a>
+        </div>
+
+        <div style="background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
+                <div>
+                    <div style="color: #9e9eb0; font-size: 12px;">Total Cost</div>
+                    <div style="color: #e0e0e0; font-size: 20px; font-weight: 600;" id="totalCost">$0.00</div>
+                </div>
+                <div>
+                    <div style="color: #9e9eb0; font-size: 12px;">Avg Cost/Session</div>
+                    <div style="color: #e0e0e0; font-size: 20px; font-weight: 600;" id="avgCost">$0.00</div>
+                </div>
+                <div>
+                    <div style="color: #9e9eb0; font-size: 12px;">Total Sessions</div>
+                    <div style="color: #e0e0e0; font-size: 20px; font-weight: 600;" id="totalSessions">0</div>
+                </div>
+                <div>
+                    <div style="color: #9e9eb0; font-size: 12px;">Savings</div>
+                    <div style="color: #4ade80; font-size: 20px; font-weight: 600;" id="savings">$0.00</div>
+                </div>
+            </div>
+        </div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="color: #8b7ab8; margin-bottom: 10px;">📋 All Generations</h3>
+                <table class="logs-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>User</th>
+                            <th>Goal</th>
+                            <th>Intent</th>
+                            <th>Type</th>
+                            <th>Cost</th>
+                            <th>Rating</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsTableBody"></tbody>
+                </table>
+                <div class="pagination" id="pagination"></div>
+            </div>
+
+            <div style="margin-top: 30px;">
+                <h3 style="color: #8b7ab8; margin-bottom: 10px;">⚠️ Failed/Unmatched Generations</h3>
+                <div style="background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 15px; margin-bottom: 15px; color: #9e9eb0; font-size: 0.9em;">
+                    These are intents that couldn't be matched to templates or pooled affirmations, requiring full AI generation. Consider creating templates for frequently unmatched intents.
+                </div>
+                <div id="failedGenerationsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Detail Modal -->
+    <div id="logModal" class="modal">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #8b7ab8; margin: 0;">Generation Details</h2>
+                <button onclick="closeLogModal()" style="background: none; border: none; color: #9e9eb0; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            <div id="logDetails"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let currentPage = 1;
+
+        // Set default dates (last 7 days)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+        document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+
+        async function loadLogs() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const goal = document.getElementById('goalFilter').value;
+            const matchType = document.getElementById('matchTypeFilter').value;
+
+            const params = new URLSearchParams({
+                page: currentPage,
+                limit: 100,
+            });
+            if (startDate) params.append('startDate', startDate);
+            if (endDate) params.append('endDate', endDate);
+            if (goal) params.append('goal', goal);
+            if (matchType) params.append('matchType', matchType);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/logs?${params}`);
+                const data = await response.json();
+                displayLogs(data.logs, data.pagination);
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function displayLogs(logs, pagination) {
+            const tbody = document.getElementById('logsTableBody');
+            const failedList = document.getElementById('failedGenerationsList');
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #9e9eb0;">No logs found</td></tr>';
+                failedList.innerHTML = '<div style="text-align: center; padding: 20px; color: #9e9eb0;">No failed generations</div>';
+                return;
+            }
+
+            // Calculate stats
+            const totalCost = logs.reduce((sum, log) => sum + (log.apiCost || 0), 0);
+            const avgCost = logs.length > 0 ? totalCost / logs.length : 0;
+            const fullGenCost = logs.length * 0.21;
+            const savings = fullGenCost - totalCost;
+
+            document.getElementById('totalCost').textContent = `$${totalCost.toFixed(2)}`;
+            document.getElementById('avgCost').textContent = `$${avgCost.toFixed(2)}`;
+            document.getElementById('totalSessions').textContent = logs.length;
+            document.getElementById('savings').textContent = `$${savings.toFixed(2)} (${((savings / fullGenCost) * 100).toFixed(0)}%)`;
+
+            // Separate failed generations (generated type)
+            const failedGenerations = logs.filter(log => log.matchType === 'generated');
+            
+            tbody.innerHTML = logs.map(log => {
+                const time = new Date(log.createdAt).toLocaleString();
+                const user = log.userEmail || log.userId?.substring(0, 8) || 'anonymous';
+                const intent = log.userIntent?.substring(0, 30) || 'N/A';
+                const matchClass = `match-${log.matchType}`;
+                
+                return `
+                    <tr>
+                        <td>${time}</td>
+                        <td>${user}</td>
+                        <td>${log.goal}</td>
+                        <td>${intent}${log.userIntent?.length > 30 ? '...' : ''}</td>
+                        <td><span class="match-badge ${matchClass}">${log.matchType}</span></td>
+                        <td>$${log.apiCost.toFixed(2)}</td>
+                        <td>${log.userRating ? log.userRating + '★' : '-'}</td>
+                        <td><button class="btn" onclick="viewLogDetails('${log.id}')" style="padding: 4px 8px; font-size: 12px;">View</button></td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Display failed generations
+            if (failedGenerations.length === 0) {
+                failedList.innerHTML = '<div style="text-align: center; padding: 20px; color: #4ade80;">✅ All intents matched successfully!</div>';
+            } else {
+                // Group by intent to find patterns
+                const intentGroups = {};
+                failedGenerations.forEach(log => {
+                    const intent = log.userIntent || 'Unknown';
+                    if (!intentGroups[intent]) {
+                        intentGroups[intent] = [];
+                    }
+                    intentGroups[intent].push(log);
+                });
+
+                const sortedIntents = Object.entries(intentGroups)
+                    .sort(([_, a], [__, b]) => b.length - a.length)
+                    .slice(0, 10); // Top 10 most frequent
+
+                failedList.innerHTML = `
+                    <div style="background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                        <div style="color: #fbbf24; margin-bottom: 10px;">
+                            <strong>${failedGenerations.length} unmatched generation(s)</strong> requiring full AI (cost: $${failedGenerations.reduce((sum, log) => sum + (log.apiCost || 0), 0).toFixed(2)})
+                        </div>
+                        <div style="font-size: 0.9em; color: #9e9eb0;">
+                            Top unmatched intents (consider creating templates):
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        ${sortedIntents.map(([intent, logs]) => `
+                            <div style="background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 6px; padding: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                                    <div style="flex: 1;">
+                                        <div style="color: #e0e0e0; font-weight: 500; margin-bottom: 4px;">"${intent}"</div>
+                                        <div style="color: #9e9eb0; font-size: 0.85em;">
+                                            Failed ${logs.length}x • Cost: $${logs.reduce((sum, log) => sum + (log.apiCost || 0), 0).toFixed(2)} • Goal: ${logs[0].goal}
+                                        </div>
+                                    </div>
+                                    <button class="btn" onclick="createTemplateFromIntent('${intent.replace(/'/g, "\\'")}', '${logs[0].goal}')" style="padding: 4px 8px; font-size: 12px; white-space: nowrap;">
+                                        📝 Create Template
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            // Pagination
+            const paginationEl = document.getElementById('pagination');
+            if (pagination.totalPages > 1) {
+                paginationEl.innerHTML = `
+                    <button onclick="changePage(${pagination.page - 1})" ${pagination.page === 1 ? 'disabled' : ''} style="background: #2a2a3e; color: #e0e0e0; border: 1px solid #3a3a4e; padding: 8px 12px; border-radius: 6px; cursor: pointer;">Previous</button>
+                    <span style="color: #9e9eb0; padding: 8px 12px;">Page ${pagination.page} of ${pagination.totalPages} (${pagination.total} total)</span>
+                    <button onclick="changePage(${pagination.page + 1})" ${pagination.page === pagination.totalPages ? 'disabled' : ''} style="background: #2a2a3e; color: #e0e0e0; border: 1px solid #3a3a4e; padding: 8px 12px; border-radius: 6px; cursor: pointer;">Next</button>
+                `;
+            } else {
+                paginationEl.innerHTML = '';
+            }
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            loadLogs();
+        }
+
+        async function viewLogDetails(logId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/logs/${logId}`);
+                const data = await response.json();
+                
+                const log = data.log;
+                const user = data.user;
+                const template = data.template;
+                const affirmations = data.affirmations;
+
+                document.getElementById('logDetails').innerHTML = `
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                            <div><strong>Time:</strong> ${new Date(log.createdAt).toLocaleString()}</div>
+                            <div><strong>User:</strong> ${user?.email || log.userId || 'anonymous'}</div>
+                            <div><strong>Goal:</strong> ${log.goal}</div>
+                            <div><strong>Match Type:</strong> <span class="match-badge match-${log.matchType}">${log.matchType}</span></div>
+                        </div>
+                        <div style="background: #0f0f1e; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                            <strong>User Intent:</strong>
+                            <div style="color: #9e9eb0; margin-top: 5px;">"${log.userIntent}"</div>
+                        </div>
+                        ${template ? `
+                            <div style="background: #0f0f1e; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                                <strong>Template Used:</strong> ${template.title}
+                            </div>
+                        ` : ''}
+                        ${affirmations && affirmations.length > 0 ? `
+                            <div style="background: #0f0f1e; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                                <strong>Affirmations Used:</strong>
+                                <ul style="margin-top: 10px; padding-left: 20px;">
+                                    ${affirmations.map(aff => `<li>${aff.text || aff.id}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                            <div style="background: #0f0f1e; padding: 15px; border-radius: 6px;">
+                                <div style="color: #9e9eb0; font-size: 12px;">Cost</div>
+                                <div style="color: #e0e0e0; font-size: 20px; font-weight: 600;">$${log.apiCost.toFixed(2)}</div>
+                            </div>
+                            <div style="background: #0f0f1e; padding: 15px; border-radius: 6px;">
+                                <div style="color: #9e9eb0; font-size: 12px;">Rating</div>
+                                <div style="color: #e0e0e0; font-size: 20px; font-weight: 600;">${log.userRating ? log.userRating + '★' : 'N/A'}</div>
+                            </div>
+                            <div style="background: #0f0f1e; padding: 15px; border-radius: 6px;">
+                                <div style="color: #9e9eb0; font-size: 12px;">Replayed</div>
+                                <div style="color: #e0e0e0; font-size: 20px; font-weight: 600;">${log.wasReplayed ? 'Yes' : 'No'}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('logModal').classList.add('active');
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        function closeLogModal() {
+            document.getElementById('logModal').classList.remove('active');
+        }
+
+        function createTemplateFromIntent(intent, goal) {
+            if (confirm(`Create a template for:\n"${intent}"\n\nGoal: ${goal}\n\nThis will open the Templates page where you can complete the template creation.`)) {
+                window.location.href = `/admin/templates?intent=${encodeURIComponent(intent)}&goal=${goal}`;
+            }
+        }
+
+        loadLogs();
+    </script>
+</body>
+</html>
+
