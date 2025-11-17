@@ -409,14 +409,32 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
         setIsLoadingAudio(true);
         console.log("[PlaybackScreen] Loading audio for session:", session.id);
 
-        // Load affirmations (TTS)
-        await audioManager.loadAffirmations(
-          session.affirmations,
-          (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
-          (session.pace || "normal") as "slow" | "normal",
-          preferences.affirmationSpacing || 8,
-          session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
-        );
+        // Load affirmations playlist (NEW: individual affirmation audio files)
+        // Fallback to legacy system if session doesn't have an ID (e.g., default sessions)
+        if (session.id && !session.id.startsWith("default-")) {
+          try {
+            await audioManager.loadAffirmationPlaylist(session.id);
+          } catch (error) {
+            console.warn("[PlaybackScreen] Failed to load playlist, falling back to legacy system:", error);
+            // Fallback to legacy system
+            await audioManager.loadAffirmations(
+              session.affirmations,
+              (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
+              (session.pace || "normal") as "slow" | "normal",
+              preferences.affirmationSpacing || 8,
+              session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
+            );
+          }
+        } else {
+          // Legacy system for default sessions or sessions without IDs
+          await audioManager.loadAffirmations(
+            session.affirmations,
+            (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
+            (session.pace || "normal") as "slow" | "normal",
+            preferences.affirmationSpacing || 8,
+            session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
+          );
+        }
 
         // Load binaural beats if category is available
         // Prefer optimized files (3-minute AAC loops) over legacy WAV files

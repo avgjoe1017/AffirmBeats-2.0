@@ -544,4 +544,25 @@ export function useAudioManager() {
     currentTime,
     duration,
     
-    // Loadin
+    // Loading
+    loadAffirmations, // Legacy
+    loadAffirmationPlaylist, // New playlist system
+    loadBinauralBeats,
+    loadBackgroundNoise,
+    
+    // Playback controls
+    play,
+    pause,
+    seek,
+    
+    // Volume controls
+    setAffirmationsVolume,
+    setBinauralBeatsVolume,
+    setBackgroundNoiseVolume,
+    setBackgroundNoisePan,
+    
+    // Cleanup
+    cleanup,
+  };
+}
+
