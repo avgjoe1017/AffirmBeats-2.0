@@ -378,8 +378,8 @@ module.exports = {
   apps: {
     "ios.debug": {
       type: "ios.app",
-      binaryPath: "ios/build/Build/Products/Debug-iphonesimulator/AffirmBeats.app",
-      build: "xcodebuild -workspace ios/AffirmBeats.xcworkspace -scheme AffirmBeats -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build"
+      binaryPath: "ios/build/Build/Products/Debug-iphonesimulator/Recenter.app",
+      build: "xcodebuild -workspace ios/Recenter.xcworkspace -scheme Recenter -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build"
     },
     "android.debug": {
       type: "android.apk",

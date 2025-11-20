@@ -173,6 +173,32 @@
             display: flex;
             gap: 10px;
         }
+        .play-btn {
+            background: #4ade80;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .play-btn:hover { background: #22c55e; }
+        .play-btn:disabled {
+            background: #6b6b7b;
+            cursor: not-allowed;
+        }
+        .play-btn.playing {
+            background: #ef4444;
+        }
+        .play-btn.playing:hover {
+            background: #dc2626;
+        }
+        audio {
+            display: none;
+        }
         .rating {
             color: #fbbf24;
             font-weight: 600;
@@ -362,6 +388,22 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label>ElevenLabs Voice *</label>
+                    <select id="affirmationVoice" required>
+                        <option value="neutral">Neutral (Mira - F)</option>
+                        <option value="confident">Confident (Archer - M)</option>
+                        <option value="premium1">Premium 1 (James - M)</option>
+                        <option value="premium2">Premium 2 (Priyanka - F)</option>
+                        <option value="premium3">Premium 3 (Rhea - F)</option>
+                        <option value="premium4">Premium 4 (Chuck - M)</option>
+                        <option value="premium5">Premium 5 (Zara - F)</option>
+                        <option value="premium6">Premium 6 (Almee - F)</option>
+                        <option value="premium7">Premium 7 (Kristen - F)</option>
+                        <option value="premium8">Premium 8 (Drew - M)</option>
+                    </select>
+                    <small style="color: #9e9eb0; font-size: 12px; margin-top: 4px; display: block;">Audio will be generated immediately</small>
+                </div>
+                <div class="form-group">
                     <label>Tags (comma-separated)</label>
                     <input type="text" id="affirmationTags" placeholder="calm, peace, present">
                 </div>
@@ -466,6 +508,19 @@
                                 <span>• Used ${aff.useCount || 0}x</span>
                                 ${rating > 0 ? `<span>• Rated ${Math.floor((aff.useCount || 0) * 0.3)}x</span>` : ''}
                             </div>
+                            ${aff.audioVersions && aff.audioVersions.length > 0 ? `
+                                <div style="margin: 10px 0; padding: 10px; background: #0f0f1e; border-radius: 6px;">
+                                    <div style="color: #8b7ab8; font-weight: 600; margin-bottom: 8px; font-size: 13px;">Voice Versions (${aff.audioVersions.length}):</div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                        ${aff.audioVersions.map(audio => `
+                                            <div style="display: flex; align-items: center; gap: 6px; background: #1a1a2e; padding: 6px 10px; border-radius: 4px; border: 1px solid #2a2a3e;">
+                                                <span style="color: #9e9eb0; font-size: 12px;">${getVoiceName(audio.voiceId)}</span>
+                                                <button class="play-btn" style="padding: 4px 8px; font-size: 11px;" id="play-btn-${audio.id}" onclick="playAffirmationAudio('${audio.id}', '${audio.audioUrl.replace(/'/g, "\\'")}')">▶️</button>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : '<div style="color: #fbbf24; margin: 10px 0; font-size: 13px;">⚠️ No audio versions yet</div>'}
                             ${aff.tags && aff.tags.length > 0 ? `
                                 <div class="affirmation-tags">
                                     ${aff.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
@@ -473,6 +528,7 @@
                             ` : ''}
                             <div class="affirmation-actions">
                                 <button class="btn" onclick="openEditModal('${aff.id}')">✏️ Edit</button>
+                                <button class="btn" onclick="openAddVoiceModal('${aff.id}')" style="background: #44B09E;">➕ Add Voice</button>
                                 <button class="btn btn-danger" onclick="deleteAffirmation('${aff.id}')">🗑️ Delete</button>
                             </div>
                         </div>
@@ -522,6 +578,7 @@
                 document.getElementById('modalTitle').textContent = 'Edit Affirmation';
                 document.getElementById('affirmationText').value = aff.text;
                 document.getElementById('affirmationGoal').value = aff.goal;
+                document.getElementById('affirmationVoice').value = aff.ttsVoiceId || 'neutral';
                 document.getElementById('affirmationTags').value = Array.isArray(aff.tags) ? aff.tags.join(', ') : '';
                 document.getElementById('affirmationEmotion').value = aff.emotion || '';
                 document.getElementById('editModal').classList.add('active');
@@ -539,6 +596,7 @@
             e.preventDefault();
             const text = document.getElementById('affirmationText').value;
             const goal = document.getElementById('affirmationGoal').value;
+            const voiceType = document.getElementById('affirmationVoice').value;
             const tagsStr = document.getElementById('affirmationTags').value;
             const emotion = document.getElementById('affirmationEmotion').value;
 
@@ -550,11 +608,17 @@
             
             const method = editingId ? 'PATCH' : 'POST';
 
+            // Show loading state
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = editingId ? 'Updating...' : 'Creating & Generating Audio...';
+
             try {
                 const response = await fetch(url, {
                     method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, goal, tags, emotion }),
+                    body: JSON.stringify({ text, goal, voiceType, tags, emotion }),
                 });
 
                 if (!response.ok) {
@@ -562,10 +626,20 @@
                     throw new Error(error.message || 'Failed to save');
                 }
 
+                const result = await response.json();
+                if (result.audioGenerated) {
+                    alert('✅ Affirmation created and audio generated successfully!');
+                } else if (result.audioError) {
+                    alert(`⚠️ Affirmation created but audio generation failed: ${result.audioError}`);
+                }
+
                 closeModal();
                 loadAffirmations();
             } catch (err) {
                 alert(`Error: ${err.message}`);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
             }
         }
 
@@ -750,6 +824,161 @@
         document.getElementById('searchInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') loadAffirmations();
         });
+
+        // Voice name mapping
+        function getVoiceName(voiceId) {
+            const voiceNames = {
+                'neutral': 'Mira (F)',
+                'confident': 'Archer (M)',
+                'premium1': 'James (M)',
+                'premium2': 'Priyanka (F)',
+                'premium3': 'Rhea (F)',
+                'premium4': 'Chuck (M)',
+                'premium5': 'Zara (F)',
+                'premium6': 'Almee (F)',
+                'premium7': 'Kristen (F)',
+                'premium8': 'Drew (M)',
+            };
+            return voiceNames[voiceId] || voiceId;
+        }
+
+        // Audio playback state
+        let currentlyPlaying = null;
+        const audioElements = new Map(); // Store audio elements by ID
+
+        function playAffirmationAudio(audioId, audioUrl) {
+            // Create audio element if it doesn't exist
+            if (!audioElements.has(audioId)) {
+                const audio = document.createElement('audio');
+                audio.src = `${API_BASE}${audioUrl}`;
+                audio.onended = () => stopAffirmationAudio(audioId);
+                audioElements.set(audioId, audio);
+                document.body.appendChild(audio);
+            }
+
+            const audio = audioElements.get(audioId);
+            const playBtn = document.getElementById(`play-btn-${audioId}`);
+            
+            if (!audio || !playBtn) {
+                alert('Audio not available');
+                return;
+            }
+
+            // Stop any currently playing audio
+            if (currentlyPlaying && currentlyPlaying !== audioId) {
+                stopAffirmationAudio(currentlyPlaying);
+            }
+
+            if (audio.paused) {
+                // Start playing
+                audio.play().then(() => {
+                    playBtn.classList.add('playing');
+                    playBtn.innerHTML = '⏸️';
+                    currentlyPlaying = audioId;
+                }).catch(err => {
+                    console.error('Playback error:', err);
+                    alert('Failed to play audio: ' + err.message);
+                });
+            } else {
+                // Stop playing
+                stopAffirmationAudio(audioId);
+            }
+        }
+
+        function stopAffirmationAudio(audioId) {
+            const audio = audioElements.get(audioId);
+            const playBtn = document.getElementById(`play-btn-${audioId}`);
+            
+            if (audio) {
+                audio.pause();
+                audio.currentTime = 0;
+            }
+            
+            if (playBtn) {
+                playBtn.classList.remove('playing');
+                playBtn.innerHTML = '▶️';
+            }
+            
+            if (currentlyPlaying === audioId) {
+                currentlyPlaying = null;
+            }
+        }
+
+        function openAddVoiceModal(affirmationId) {
+            // Create modal for adding a new voice version
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+            modal.innerHTML = `
+                <div style="background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 25px; max-width: 500px; width: 90%;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="color: #8b7ab8; margin: 0;">Add Voice Version</h2>
+                        <button onclick="this.closest('div[style*=\"position: fixed\"]').remove()" style="background: none; border: none; color: #9e9eb0; font-size: 24px; cursor: pointer;">&times;</button>
+                    </div>
+                    <form id="addVoiceForm" onsubmit="addVoiceVersion(event, '${affirmationId}'); return false;">
+                        <div class="form-group">
+                            <label>ElevenLabs Voice *</label>
+                            <select id="newVoiceType" required style="width: 100%; background: #0f0f1e; border: 1px solid #2a2a3e; color: #e0e0e0; padding: 10px; border-radius: 6px;">
+                                <option value="neutral">Neutral (Mira - F)</option>
+                                <option value="confident">Confident (Archer - M)</option>
+                                <option value="premium1">Premium 1 (James - M)</option>
+                                <option value="premium2">Premium 2 (Priyanka - F)</option>
+                                <option value="premium3">Premium 3 (Rhea - F)</option>
+                                <option value="premium4">Premium 4 (Chuck - M)</option>
+                                <option value="premium5">Premium 5 (Zara - F)</option>
+                                <option value="premium6">Premium 6 (Almee - F)</option>
+                                <option value="premium7">Premium 7 (Kristen - F)</option>
+                                <option value="premium8">Premium 8 (Drew - M)</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="this.closest('div[style*=\"position: fixed\"]').remove()">Cancel</button>
+                            <button type="submit" class="btn">Generate Audio</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function addVoiceVersion(e, affirmationId) {
+            e.preventDefault();
+            const voiceType = document.getElementById('newVoiceType').value;
+
+            // Get affirmation text and goal
+            const response = await fetch(`${API_BASE}/api/admin/affirmations?limit=1000`);
+            const data = await response.json();
+            const aff = data.affirmations.find(a => a.id === affirmationId);
+            
+            if (!aff) {
+                alert('Affirmation not found');
+                return;
+            }
+
+            // Generate audio for this voice version
+            try {
+                const generateResponse = await fetch(`${API_BASE}/api/admin/affirmations/${affirmationId}/generate-audio`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voiceType, pace }),
+                });
+
+                if (!generateResponse.ok) {
+                    const error = await generateResponse.json();
+                    throw new Error(error.message || 'Failed to generate audio');
+                }
+
+                const result = await generateResponse.json();
+                if (result.audioGenerated) {
+                    alert('✅ Audio generated successfully!');
+                    document.querySelector('div[style*="position: fixed"]')?.remove();
+                    loadAffirmations();
+                } else if (result.audioError) {
+                    alert(`⚠️ Audio generation failed: ${result.audioError}`);
+                }
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
     </script>
 </body>
 </html>

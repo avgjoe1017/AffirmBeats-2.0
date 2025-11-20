@@ -5,7 +5,7 @@
 
 ## Overview
 
-This guide provides instructions for integrating production metrics services (Prometheus, DataDog, CloudWatch) with the AffirmBeats backend.
+This guide provides instructions for integrating production metrics services (Prometheus, DataDog, CloudWatch) with the Recenter backend.
 
 ## Built-in Metrics
 
@@ -132,7 +132,7 @@ Create a DataDog dashboard with:
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-CLOUDWATCH_NAMESPACE=AffirmBeats  # Optional, defaults to AffirmBeats
+CLOUDWATCH_NAMESPACE=Recenter  # Optional, defaults to Recenter
 ```
 
 #### Step 3: Install AWS SDK
@@ -153,7 +153,7 @@ The CloudWatch integration is automatically initialized when AWS credentials are
 AWS_REGION=us-east-1                    // Optional, defaults to us-east-1
 AWS_ACCESS_KEY_ID=your-access-key-id    // Required
 AWS_SECRET_ACCESS_KEY=your-secret-key   // Required
-CLOUDWATCH_NAMESPACE=AffirmBeats        // Optional, defaults to AffirmBeats
+CLOUDWATCH_NAMESPACE=Recenter        // Optional, defaults to Recenter
 ```
 
 ### Metrics Format

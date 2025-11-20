@@ -5,7 +5,7 @@
 
 ## Overview
 
-This guide provides information about the metrics collection infrastructure in the AffirmBeats backend.
+This guide provides information about the metrics collection infrastructure in the Recenter backend.
 
 ## Metrics Collection
 
@@ -302,7 +302,7 @@ import { CloudWatch } from "aws-sdk";
 const cloudwatch = new CloudWatch();
 
 await cloudwatch.putMetricData({
-  Namespace: "AffirmBeats",
+  Namespace: "Recenter",
   MetricData: [
     {
       MetricName: "APIRequests",

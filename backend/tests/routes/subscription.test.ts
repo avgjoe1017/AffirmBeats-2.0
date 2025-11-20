@@ -20,7 +20,7 @@ describe("Subscription API", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        productId: "com.affirmbeats.pro.monthly",
+        productId: "com.recenter.pro.monthly",
         platform: "ios",
       }),
     });

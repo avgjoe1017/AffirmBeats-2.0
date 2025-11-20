@@ -573,7 +573,7 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
             className="active:opacity-80"
           >
             <LinearGradient
-              colors={canProceed && !isCreating ? ["#8B7AB8", "#6B5A98"] : ["#333", "#444"]}
+              colors={canProceed && !isCreating ? ["#44B09E", "#2A7A6E"] : ["#333", "#444"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-4 rounded-2xl items-center"

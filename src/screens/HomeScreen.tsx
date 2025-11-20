@@ -207,7 +207,7 @@ const HomeScreen = ({ navigation }: Props) => {
             className="active:opacity-80"
           >
             <LinearGradient
-              colors={["#8B7AB8", "#6B5A98"]}
+              colors={["#44B09E", "#2A7A6E"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={{
@@ -216,7 +216,7 @@ const HomeScreen = ({ navigation }: Props) => {
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
-                shadowColor: "#8B7AB8",
+                shadowColor: "#44B09E",
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.3,
                 shadowRadius: 8,

@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, Keyboard, TouchableWithoutFeedback } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { Sparkles, Moon, Zap, Heart, Check } from "lucide-react-native";
+import { Moon, Zap, Heart, Check, Sparkles } from "lucide-react-native";
 import type { RootStackScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
+import LoopLogo from "@/components/LoopLogo";
 
 type Props = RootStackScreenProps<"Onboarding">;
 
@@ -66,9 +67,9 @@ const OnboardingScreen = ({ navigation }: Props) => {
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 justify-center px-8 pb-20">
         <Animated.View entering={FadeIn.duration(800)} className="items-center mb-12">
-          <Sparkles size={48} color="#8B7AB8" strokeWidth={1.5} />
+          <LoopLogo size={48} color="#44B09E" strokeWidth={2.5} />
           <Text className="text-white text-4xl font-bold mt-6 text-center">
-            Affirmation Beats
+            Recenter
           </Text>
           <Text className="text-gray-400 text-lg mt-3 text-center">
             Hear what you need to believe
@@ -203,10 +204,10 @@ const OnboardingScreen = ({ navigation }: Props) => {
             <Text className="text-gray-500 text-sm mt-2">
               {userIntention.length}/200 characters
             </Text>
-            <View className="bg-purple-500/20 rounded-2xl p-4 mt-4 border border-purple-500/30">
+            <View className="bg-[#44B09E]/20 rounded-2xl p-4 mt-4 border border-[#44B09E]/30">
               <View className="flex-row items-start">
-                <Sparkles size={20} color="#8B7AB8" strokeWidth={2} />
-                <Text className="text-purple-200 text-sm ml-3 flex-1">
+                <LoopLogo size={20} color="#44B09E" strokeWidth={2} />
+                <Text className="text-[#44B09E]/90 text-sm ml-3 flex-1">
                   Our AI will generate 6-10 personalized affirmations based on your goal
                 </Text>
               </View>
@@ -224,7 +225,7 @@ const OnboardingScreen = ({ navigation }: Props) => {
           className={`active:opacity-80 ${!canContinue ? "opacity-40" : ""}`}
         >
           <LinearGradient
-            colors={canContinue ? ["#8B7AB8", "#6B5A98"] : ["#4A4A5A", "#3A3A4A"]}
+            colors={canContinue ? ["#44B09E", "#2A7A6E"] : ["#4A4A5A", "#3A3A4A"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={{

@@ -130,9 +130,9 @@ const BottomTabNavigator = () => {
             position: "absolute",
             backgroundColor: "rgba(15, 15, 30, 0.9)",
             borderTopWidth: 1,
-            borderTopColor: "rgba(139, 122, 184, 0.2)",
+            borderTopColor: "rgba(68, 176, 158, 0.2)",
           },
-          tabBarActiveTintColor: "#8B7AB8",
+          tabBarActiveTintColor: "#44B09E",
           tabBarInactiveTintColor: "#666",
           tabBarBackground: () => (
             <BlurView tint="dark" intensity={80} style={StyleSheet.absoluteFill} />

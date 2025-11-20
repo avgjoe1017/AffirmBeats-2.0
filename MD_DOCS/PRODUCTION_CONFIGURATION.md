@@ -5,7 +5,7 @@
 
 ## Overview
 
-This guide provides step-by-step instructions for configuring the AffirmBeats application for production deployment.
+This guide provides step-by-step instructions for configuring the Recenter application for production deployment.
 
 ## Prerequisites
 
@@ -251,7 +251,7 @@ Set in your production environment:
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-CLOUDWATCH_NAMESPACE=AffirmBeats
+CLOUDWATCH_NAMESPACE=Recenter
 ```
 
 #### Step 5.4: Install CloudWatch SDK (Optional)
@@ -319,7 +319,7 @@ DATADOG_SITE=datadoghq.com
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-CLOUDWATCH_NAMESPACE=AffirmBeats
+CLOUDWATCH_NAMESPACE=Recenter
 ```
 
 ### 7. Production Deployment

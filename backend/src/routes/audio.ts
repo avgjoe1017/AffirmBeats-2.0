@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { logger } from "../lib/logger";
 import { env } from "../env";
+import { getSignedUrl, isSupabaseConfigured, STORAGE_BUCKETS } from "../lib/supabase";
 
 const audioRouter = new Hono<AppType>();
 
@@ -80,6 +81,17 @@ audioRouter.get("/binaural/:filename", async (c) => {
       }, 400);
     }
 
+    // Try Supabase Storage first (if configured)
+    if (isSupabaseConfigured()) {
+      const signedUrl = await getSignedUrl(STORAGE_BUCKETS.BINAURAL, filename, 3600);
+      if (signedUrl) {
+        logger.info("Redirecting to Supabase Storage", { filename, bucket: STORAGE_BUCKETS.BINAURAL });
+        return c.redirect(signedUrl, 302);
+      }
+      // If Supabase fails, fall through to local file serving
+      logger.warn("Supabase file not found, falling back to local", { filename });
+    }
+
     // Try optimized files first (assets/audio/binaural/)
     let filePath: string | null = null;
     const optimizedPath = path.join(optimizedAudioRoot, "binaural", filename);
@@ -149,7 +161,7 @@ audioRouter.get("/binaural/:filename", async (c) => {
     const rangeHeader = c.req.header("Range");
     if (rangeHeader) {
       const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-      if (rangeMatch) {
+      if (rangeMatch && rangeMatch[1]) {
         const start = parseInt(rangeMatch[1], 10);
         const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
         const chunkSize = end - start + 1;
@@ -208,10 +220,10 @@ audioRouter.get("/background/*", async (c) => {
     let subdirectory: string | null = null;
     let filename: string;
     
-    if (pathParts.length === 1) {
+    if (pathParts.length === 1 && pathParts[0]) {
       // Old format: /background/filename (no subdirectory)
       filename = pathParts[0];
-    } else if (pathParts.length === 2) {
+    } else if (pathParts.length === 2 && pathParts[0] && pathParts[1]) {
       // New format: /background/subdirectory/filename
       subdirectory = pathParts[0];
       filename = pathParts[1];
@@ -225,6 +237,18 @@ audioRouter.get("/background/*", async (c) => {
     }
     
     logger.debug("Serving background audio file", { filename, subdirectory });
+
+    // Try Supabase Storage first (if configured)
+    if (isSupabaseConfigured()) {
+      const supabasePath = subdirectory ? `${subdirectory}/${filename}` : filename;
+      const signedUrl = await getSignedUrl(STORAGE_BUCKETS.BACKGROUND, supabasePath, 3600);
+      if (signedUrl) {
+        logger.info("Redirecting to Supabase Storage", { filename, subdirectory, bucket: STORAGE_BUCKETS.BACKGROUND });
+        return c.redirect(signedUrl, 302);
+      }
+      // If Supabase fails, fall through to local file serving
+      logger.warn("Supabase file not found, falling back to local", { filename, subdirectory });
+    }
 
     // Security: Prevent path traversal attacks
     if (filename.includes("..") || path.isAbsolute(filename) || 
@@ -245,12 +269,13 @@ audioRouter.get("/background/*", async (c) => {
       const normalizedOptimizedPath = path.normalize(optimizedPath);
       const normalizedOptimizedRoot = path.normalize(path.join(optimizedAudioRoot, "background", subdirectory));
       
-      logger.debug("Checking optimized background file", { 
+      logger.info("Checking optimized background file", { 
         filename, 
         subdirectory, 
         optimizedPath,
         normalizedOptimizedPath,
         normalizedOptimizedRoot,
+        optimizedAudioRoot,
         exists: fs.existsSync(normalizedOptimizedPath),
         startsWith: normalizedOptimizedPath.startsWith(normalizedOptimizedRoot)
       });
@@ -258,13 +283,15 @@ audioRouter.get("/background/*", async (c) => {
       // Check if optimized file exists and is within allowed directory
       if (normalizedOptimizedPath.startsWith(normalizedOptimizedRoot) && fs.existsSync(normalizedOptimizedPath)) {
         filePath = normalizedOptimizedPath;
-        logger.debug("Using optimized background file", { filename, subdirectory, filePath });
+        logger.info("Using optimized background file", { filename, subdirectory, filePath });
       } else {
         logger.warn("Optimized background file not found or invalid", { 
           filename, 
           subdirectory, 
           optimizedPath: normalizedOptimizedPath,
-          exists: fs.existsSync(normalizedOptimizedPath)
+          normalizedOptimizedRoot,
+          exists: fs.existsSync(normalizedOptimizedPath),
+          directoryExists: fs.existsSync(path.dirname(normalizedOptimizedPath))
         });
       }
     }
@@ -351,7 +378,7 @@ audioRouter.get("/background/*", async (c) => {
     const rangeHeader = c.req.header("Range");
     if (rangeHeader) {
       const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-      if (rangeMatch) {
+      if (rangeMatch && rangeMatch[1]) {
         const start = parseInt(rangeMatch[1], 10);
         const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
         const chunkSize = end - start + 1;
@@ -390,6 +417,134 @@ audioRouter.get("/background/*", async (c) => {
     return c.body(arrayBuffer);
   } catch (error) {
     logger.error("Error serving background audio file", error, { 
+      filename: c.req.param("filename") 
+    });
+    return c.json({ 
+      error: "INTERNAL_ERROR",
+      code: "INTERNAL_ERROR",
+      message: "Internal server error",
+      details: error instanceof Error ? error.message : "Unknown error"
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/audio/solfeggio/:filename
+ * Serve solfeggio tone audio files
+ */
+audioRouter.get("/solfeggio/:filename", async (c) => {
+  try {
+    // Decode the filename from URL encoding
+    let filename = decodeURIComponent(c.req.param("filename"));
+    
+    logger.debug("Serving solfeggio audio file", { filename });
+
+    // Security: Prevent path traversal attacks
+    if (filename.includes("..") || path.isAbsolute(filename)) {
+      logger.warn("Invalid filename attempt (path traversal)", { filename });
+      return c.json({ 
+        error: "INVALID_FILENAME",
+        code: "INVALID_FILENAME",
+        message: "Invalid filename" 
+      }, 400);
+    }
+
+    // Try Supabase Storage first (if configured)
+    if (isSupabaseConfigured()) {
+      const signedUrl = await getSignedUrl(STORAGE_BUCKETS.SOLFEGGIO, filename, 3600);
+      if (signedUrl) {
+        logger.info("Redirecting to Supabase Storage", { filename, bucket: STORAGE_BUCKETS.SOLFEGGIO });
+        return c.redirect(signedUrl, 302);
+      }
+      // If Supabase fails, fall through to local file serving
+      logger.warn("Supabase file not found, falling back to local", { filename });
+    }
+
+    // Try optimized files (assets/audio/solfeggio/)
+    let filePath: string | null = null;
+    const optimizedPath = path.join(optimizedAudioRoot, "solfeggio", filename);
+    const normalizedOptimizedPath = path.normalize(optimizedPath);
+    const normalizedOptimizedRoot = path.normalize(path.join(optimizedAudioRoot, "solfeggio"));
+    
+    // Check if optimized file exists and is within allowed directory
+    if (normalizedOptimizedPath.startsWith(normalizedOptimizedRoot) && fs.existsSync(normalizedOptimizedPath)) {
+      filePath = normalizedOptimizedPath;
+      logger.debug("Using optimized solfeggio file", { filename, filePath });
+    }
+
+    // Check if file exists
+    if (!filePath) {
+      logger.warn("Solfeggio audio file not found", { filename });
+      return c.json({ 
+        error: "FILE_NOT_FOUND",
+        code: "FILE_NOT_FOUND",
+        message: "File not found" 
+      }, 404);
+    }
+
+    const normalizedPath = filePath;
+
+    // Determine content type based on file extension
+    const ext = path.extname(filename).toLowerCase();
+    let contentType: string;
+    if (ext === ".wav") {
+      contentType = "audio/wav";
+    } else if (ext === ".m4a") {
+      contentType = "audio/mp4";
+    } else if (ext === ".opus") {
+      contentType = "audio/opus";
+    } else {
+      contentType = "audio/mpeg";
+    }
+
+    // Get file stats for Range request support
+    const stats = fs.statSync(normalizedPath);
+    const fileSize = stats.size;
+
+    // Read and serve the file
+    const fileBuffer = fs.readFileSync(normalizedPath);
+    const arrayBuffer = fileBuffer.buffer.slice(
+      fileBuffer.byteOffset,
+      fileBuffer.byteOffset + fileBuffer.byteLength
+    );
+
+    // Handle Range requests for iOS AVPlayer compatibility
+    const rangeHeader = c.req.header("Range");
+    if (rangeHeader) {
+      const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (rangeMatch && rangeMatch[1]) {
+        const start = parseInt(rangeMatch[1], 10);
+        const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+        const chunk = fileBuffer.slice(start, end + 1);
+        const chunkArrayBuffer = chunk.buffer.slice(
+          chunk.byteOffset,
+          chunk.byteOffset + chunk.byteLength
+        );
+
+        c.header("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+        c.header("Content-Length", chunkSize.toString());
+        c.header("Content-Type", contentType);
+        c.header("Accept-Ranges", "bytes");
+        c.status(206);
+        return c.body(chunkArrayBuffer);
+      }
+    }
+
+    // Full file response
+    c.header("Content-Type", contentType);
+    c.header("Content-Length", arrayBuffer.byteLength.toString());
+    c.header("Accept-Ranges", "bytes");
+    c.header("Cache-Control", "public, max-age=31536000, immutable");
+
+    logger.debug("Solfeggio audio file served successfully", { 
+      filename, 
+      fileSize: arrayBuffer.byteLength
+    });
+
+    return c.body(arrayBuffer);
+  } catch (error) {
+    logger.error("Error serving solfeggio audio file", error, { 
       filename: c.req.param("filename") 
     });
     return c.json({ 

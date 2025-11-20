@@ -5,7 +5,7 @@
 
 ## Overview
 
-This guide provides information about the frontend testing infrastructure for the AffirmBeats app using Jest and React Native Testing Library.
+This guide provides information about the frontend testing infrastructure for the Recenter app using Jest and React Native Testing Library.
 
 ## Testing Stack
 

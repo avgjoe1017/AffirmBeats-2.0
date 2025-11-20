@@ -14,7 +14,7 @@ import { env } from "../../env";
 
 let cloudwatchClient: any = null;
 let cloudwatchEnabled = false;
-let cloudwatchNamespace = "AffirmBeats";
+let cloudwatchNamespace = "Recenter";
 
 /**
  * Initialize CloudWatch metrics client

@@ -415,8 +415,9 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
           try {
             await audioManager.loadAffirmationPlaylist(session.id);
           } catch (error) {
-            console.warn("[PlaybackScreen] Failed to load playlist, falling back to legacy system:", error);
-            // Fallback to legacy system
+            console.error("[PlaybackScreen] Failed to load playlist - session may not have individual affirmations yet:", error);
+            // Fallback to legacy system only as last resort
+            console.warn("[PlaybackScreen] Falling back to legacy TTS system");
             await audioManager.loadAffirmations(
               session.affirmations,
               (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",

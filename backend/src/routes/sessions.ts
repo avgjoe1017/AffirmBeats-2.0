@@ -636,13 +636,20 @@ async function processSessionAffirmations(
 
   for (let i = 0; i < affirmations.length; i++) {
     const text = affirmations[i];
-    let affirmationId: string;
+    if (!text) {
+      logger.warn(`Skipping empty affirmation at index ${i}`);
+      continue;
+    }
+
+    let affirmationId: string | undefined;
 
     // If we have an existing affirmation ID (from library match), use it
     if (affirmationIds && affirmationIds[i]) {
       affirmationId = affirmationIds[i];
-    } else {
-      // Create new AffirmationLine record
+    }
+
+    // Create new AffirmationLine record if we don't have an ID
+    if (!affirmationId) {
       const newAffirmation = await db.affirmationLine.create({
         data: {
           text,
@@ -653,18 +660,34 @@ async function processSessionAffirmations(
       affirmationId = newAffirmation.id;
     }
 
+    // affirmationId is guaranteed to be defined at this point
+    if (!affirmationId) {
+      logger.error(`Failed to get affirmation ID for text at index ${i}`);
+      continue;
+    }
+
     // Generate audio for this affirmation (or use cached)
     try {
-      await generateAffirmationAudio(
+      const audioResult = await generateAffirmationAudio(
         affirmationId,
         text,
         voiceType as any,
         goal,
         pace
       );
+      logger.debug(`Generated audio for affirmation ${affirmationId}`, {
+        durationMs: audioResult.durationMs,
+        audioUrl: audioResult.audioUrl,
+      });
     } catch (error) {
-      logger.error(`Failed to generate audio for affirmation ${affirmationId}`, error);
+      logger.error(`Failed to generate audio for affirmation ${affirmationId}`, error, {
+        text: text.substring(0, 50),
+        voiceType,
+        goal,
+        pace,
+      });
       // Continue even if audio generation fails - audio can be generated later
+      // But log it so we know what's happening
     }
 
     // Create SessionAffirmation junction record
@@ -973,6 +996,23 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
       });
       sessionId = session.id;
       
+      // Process affirmations: create AffirmationLine records, generate audio, create SessionAffirmation records
+      try {
+        await processSessionAffirmations(
+          affirmations,
+          undefined, // No existing affirmation IDs for custom sessions
+          goal,
+          voice,
+          pace as "slow" | "normal",
+          sessionId,
+          5000 // Default silence between affirmations
+        );
+        logger.info("Processed individual affirmations for custom session", { sessionId, affirmationsCount: affirmations.length });
+      } catch (error) {
+        logger.error("Failed to process session affirmations for custom session", error, { sessionId });
+        // Continue anyway - session can still be created, audio can be generated later
+      }
+      
       // Usage was already tracked atomically above (for free tier)
       // For Pro users, no tracking needed
       if (userSubscription && userSubscription.tier === "pro") {
@@ -1115,15 +1155,107 @@ sessionsRouter.get("/:id/playlist", async (c) => {
   }
 
   // Build playlist from SessionAffirmation records
-  const affirmations = session.sessionAffirmations.map((sa) => ({
-    id: sa.affirmationId,
-    text: sa.affirmation.text,
-    audioUrl: sa.affirmation.ttsAudioUrl
-      ? `${baseUrl}${sa.affirmation.ttsAudioUrl}`
-      : null,
-    durationMs: sa.affirmation.audioDurationMs || 0,
-    silenceAfterMs: sa.silenceAfterMs,
-  }));
+  // If session has no individual affirmations, return empty playlist (legacy sessions use single audio file)
+  if (!session.sessionAffirmations || session.sessionAffirmations.length === 0) {
+    logger.info("Session has no individual affirmations, returning empty playlist", { sessionId });
+    return c.json({
+      sessionId: session.id,
+      totalDurationMs: 0,
+      silenceBetweenMs: session.silenceBetweenMs,
+      affirmations: [],
+      binauralCategory: session.binauralCategory || undefined,
+      binauralHz: session.binauralHz || undefined,
+      backgroundNoise: session.noise || undefined,
+    });
+  }
+
+  // Get user preferences for voice selection (pace is always slow)
+  let preferredVoice: string = "neutral";
+  
+  if (user) {
+    const preferences = await db.userPreferences.findUnique({
+      where: { userId: user.id },
+    });
+    if (preferences) {
+      preferredVoice = preferences.voice || "neutral";
+    }
+  }
+
+  // Check if user has premium access
+  let hasPremiumAccess = false;
+  if (user) {
+    const subscription = await db.userSubscription.findUnique({
+      where: { userId: user.id },
+    });
+    hasPremiumAccess = subscription?.tier === "pro";
+  }
+
+  // Map premium voices to allowed voices
+  const allowedVoices = ["neutral", "confident"];
+  if (hasPremiumAccess) {
+    allowedVoices.push("premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8");
+  }
+
+  // If user's preferred voice is not allowed, fall back to neutral
+  if (!allowedVoices.includes(preferredVoice)) {
+    preferredVoice = "neutral";
+  }
+
+  // Build playlist with appropriate voice versions (pace is always slow)
+  const affirmations = await Promise.all(
+    session.sessionAffirmations.map(async (sa) => {
+      // Try to find the preferred audio version (always slow pace)
+      let audioVersion = await db.affirmationAudio.findUnique({
+        where: {
+          affirmationId_voiceId: {
+            affirmationId: sa.affirmationId,
+            voiceId: preferredVoice,
+          },
+        },
+      });
+
+      // If still not found, try any allowed voice
+      if (!audioVersion) {
+        audioVersion = await db.affirmationAudio.findFirst({
+          where: {
+            affirmationId: sa.affirmationId,
+            voiceId: { in: allowedVoices },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+      }
+
+      // If still not found, try any voice (for admin/testing)
+      if (!audioVersion) {
+        audioVersion = await db.affirmationAudio.findFirst({
+          where: {
+            affirmationId: sa.affirmationId,
+          },
+          orderBy: { createdAt: "desc" },
+        });
+      }
+
+      // Fall back to legacy fields if no audio version exists
+      const audioUrl = audioVersion
+        ? `${baseUrl}${audioVersion.audioUrl}`
+        : sa.affirmation.ttsAudioUrl
+        ? `${baseUrl}${sa.affirmation.ttsAudioUrl}`
+        : null;
+
+      const durationMs = audioVersion
+        ? audioVersion.durationMs
+        : sa.affirmation.audioDurationMs || 0;
+
+      return {
+        id: sa.affirmationId,
+        text: sa.affirmation.text,
+        audioUrl,
+        durationMs,
+        silenceAfterMs: sa.silenceAfterMs,
+        voiceId: audioVersion?.voiceId || sa.affirmation.ttsVoiceId || null,
+      };
+    })
+  );
 
   // Calculate total duration
   const totalDurationMs = affirmations.reduce((sum, aff) => {

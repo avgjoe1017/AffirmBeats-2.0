@@ -30,7 +30,7 @@ export const auth = betterAuth({
   baseURL: env.BACKEND_URL,
   plugins: [expo()],
   trustedOrigins: [
-    "vibecode://", // Expo app scheme (IMPORTANT: Update if you change app.json scheme)
+    "recenter://", // Expo app scheme (IMPORTANT: Update if you change app.json scheme)
     "http://localhost:3000",
     env.BACKEND_URL,
   ],

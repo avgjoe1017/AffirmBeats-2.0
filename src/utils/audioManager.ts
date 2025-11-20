@@ -69,17 +69,27 @@ export function useAudioManager() {
         setAffirmationsSound(null);
       }
 
+      // Skip playlist fetch for temp sessions (they don't exist in backend)
+      if (sessionId.startsWith("temp-") || sessionId.startsWith("default-")) {
+        throw new Error("Session not saved - cannot load playlist");
+      }
+
       // Fetch playlist from backend
       const response = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/playlist`);
       
       if (!response.ok) {
+        // 404 means session doesn't exist or hasn't been processed yet
+        if (response.status === 404) {
+          throw new Error(`Session ${sessionId} not found or not processed yet`);
+        }
         throw new Error(`Failed to fetch playlist: ${response.status}`);
       }
 
       const playlistData = await response.json();
-      
+
+      // If playlist is empty, the session hasn't been processed yet
       if (!playlistData.affirmations || playlistData.affirmations.length === 0) {
-        throw new Error("Playlist is empty");
+        throw new Error(`Session ${sessionId} has no individual affirmations - may need to be regenerated`);
       }
 
       // Set playlist and calculate total duration
@@ -87,29 +97,74 @@ export function useAudioManager() {
       setDuration(playlistData.totalDurationMs / 1000);
       setCurrentAffirmationIndex(0);
 
-      // Preload all affirmation audio files
-      const loadPromises = playlistData.affirmations.map(async (aff: {
+      // Optimized preloading strategy:
+      // 1. Load first 3 affirmations immediately (priority for smooth start)
+      // 2. Load rest in background batches
+      const PRIORITY_COUNT = 3;
+      const BATCH_SIZE = 5;
+      
+      const priorityAffirmations = playlistData.affirmations.slice(0, PRIORITY_COUNT);
+      const remainingAffirmations = playlistData.affirmations.slice(PRIORITY_COUNT);
+
+      // Helper function to load a single affirmation
+      const loadAffirmation = async (aff: {
         id: string;
         audioUrl: string | null;
-      }) => {
+      }, retries = 2): Promise<boolean> => {
         if (!aff.audioUrl) {
           console.warn(`[AudioManager] No audio URL for affirmation ${aff.id}`);
-          return;
+          return false;
         }
 
-        try {
-          const { sound } = await Audio.Sound.createAsync(
-            { uri: aff.audioUrl },
-            { shouldPlay: false }
-          );
-          playlistSoundsRef.current.set(aff.id, sound);
-        } catch (error) {
-          console.error(`[AudioManager] Failed to load affirmation ${aff.id}:`, error);
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          try {
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: aff.audioUrl },
+              { shouldPlay: false }
+            );
+            playlistSoundsRef.current.set(aff.id, sound);
+            return true;
+          } catch (error) {
+            if (attempt === retries) {
+              console.error(`[AudioManager] Failed to load affirmation ${aff.id} after ${retries + 1} attempts:`, error);
+              return false;
+            }
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
+          }
         }
+        return false;
+      };
+
+      // Load priority affirmations first (parallel)
+      const priorityPromises = priorityAffirmations.map(aff => loadAffirmation(aff));
+      const priorityResults = await Promise.allSettled(priorityPromises);
+      const prioritySuccessCount = priorityResults.filter(r => r.status === 'fulfilled' && r.value).length;
+      console.log(`[AudioManager] Loaded ${prioritySuccessCount}/${PRIORITY_COUNT} priority affirmations`);
+
+      // Load remaining affirmations in batches (non-blocking)
+      // Process batches sequentially to avoid overwhelming the network
+      const loadRemainingInBatches = async () => {
+        for (let i = 0; i < remainingAffirmations.length; i += BATCH_SIZE) {
+          const batch = remainingAffirmations.slice(i, i + BATCH_SIZE);
+          const batchPromises = batch.map(aff => loadAffirmation(aff));
+          const batchResults = await Promise.allSettled(batchPromises);
+          const batchSuccessCount = batchResults.filter(r => r.status === 'fulfilled' && r.value).length;
+          console.log(`[AudioManager] Loaded batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchSuccessCount}/${batch.length} affirmations`);
+          
+          // Small delay between batches to avoid overwhelming the system
+          if (i + BATCH_SIZE < remainingAffirmations.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+      };
+
+      // Start loading remaining affirmations in background (don't await)
+      loadRemainingInBatches().catch(error => {
+        console.error("[AudioManager] Error loading remaining affirmations:", error);
       });
 
-      await Promise.all(loadPromises);
-      console.log(`[AudioManager] Loaded ${playlistSoundsRef.current.size} affirmation audio files`);
+      console.log(`[AudioManager] Preloading complete. Priority affirmations ready, ${remainingAffirmations.length} loading in background`);
     } catch (error) {
       console.error("[AudioManager] Failed to load affirmation playlist:", error);
       throw error;
@@ -266,9 +321,18 @@ export function useAudioManager() {
       setBackgroundSound(sound);
       return sound;
     } catch (error) {
-      console.error("[AudioManager] Failed to load background noise:", error, { fileUri });
+      // Only log as error if it's not a network/connection error (which are expected for missing files)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isNetworkError = errorMessage.includes("NSURLErrorDomain") || 
+                            errorMessage.includes("Network request failed") ||
+                            errorMessage.includes("timeout") ||
+                            errorMessage.includes("-1008");
+      if (!isNetworkError) {
+        console.error("[AudioManager] Failed to load background noise:", error, { fileUri });
+      } else {
+        console.log("[AudioManager] Background noise unavailable (file may not exist)");
+      }
       // Don't throw - allow playback to continue without background sound
-      console.warn("[AudioManager] Continuing without background noise - URL may be invalid or file missing");
       return null;
     }
   };
@@ -356,13 +420,28 @@ export function useAudioManager() {
       return;
     }
 
-    const sound = playlistSoundsRef.current.get(affirmation.id);
+    // Wait for audio to be loaded (with timeout)
+    let sound = playlistSoundsRef.current.get(affirmation.id);
     if (!sound) {
-      console.warn(`[AudioManager] Sound not loaded for affirmation ${affirmation.id}, skipping`);
-      setTimeout(() => {
-        playNextAffirmation(index + 1);
-      }, affirmation.silenceAfterMs);
-      return;
+      console.log(`[AudioManager] Waiting for affirmation ${affirmation.id} to load...`);
+      // Wait up to 2 seconds for audio to load
+      const maxWaitTime = 2000;
+      const checkInterval = 100;
+      let waited = 0;
+      
+      while (!sound && waited < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        waited += checkInterval;
+        sound = playlistSoundsRef.current.get(affirmation.id);
+      }
+      
+      if (!sound) {
+        console.warn(`[AudioManager] Sound not loaded for affirmation ${affirmation.id} after ${maxWaitTime}ms, skipping`);
+        setTimeout(() => {
+          playNextAffirmation(index + 1);
+        }, affirmation.silenceAfterMs);
+        return;
+      }
     }
 
     try {

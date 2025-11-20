@@ -8,9 +8,11 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { parseBuffer } from "music-metadata";
 import { db } from "../db";
 import { logger } from "../lib/logger";
 import { env } from "../env";
+import { uploadFile, isSupabaseConfigured, STORAGE_BUCKETS } from "../lib/supabase";
 
 const getProjectRoot = () => {
   if (typeof import.meta !== "undefined" && "dir" in import.meta && import.meta.dir) {
@@ -52,26 +54,27 @@ const VOICE_IDS = {
 };
 
 // Goal-based voice settings
+// Note: ElevenLabs speed must be between 0.7 and 1.2
 const VOICE_CONFIG_BY_GOAL = {
   sleep: {
     stability: 0.80,
     similarity_boost: 0.60,
-    speed: 0.65,
+    speed: 0.75, // Minimum valid speed for slow, calming effect
   },
   calm: {
     stability: 0.75,
     similarity_boost: 0.65,
-    speed: 0.70,
+    speed: 0.80, // Slightly faster than sleep
   },
   focus: {
     stability: 0.72,
     similarity_boost: 0.68,
-    speed: 0.75,
+    speed: 0.90, // More energetic for focus
   },
   manifest: {
     stability: 0.70,
     similarity_boost: 0.70,
-    speed: 0.80,
+    speed: 1.0, // Normal speed for manifesting
   },
 } as const;
 
@@ -102,15 +105,28 @@ function getCachedAudioPath(cacheKey: string): string {
 }
 
 /**
- * Get audio duration from MP3 file (approximate)
- * This is a simple estimation - for accurate duration, use a proper audio library
+ * Get accurate audio duration from MP3 file using music-metadata
  */
 async function getAudioDuration(buffer: Buffer): Promise<number> {
-  // Simple estimation: MP3 files are typically ~1KB per second at 128kbps
-  // This is approximate but works for our use case
-  // For production, consider using a library like node-ffmpeg or mp3-duration
-  const estimatedSeconds = buffer.length / 1000; // Rough estimate
-  return Math.round(estimatedSeconds * 1000); // Return in milliseconds
+  try {
+    const metadata = await parseBuffer(buffer);
+    const durationSeconds = metadata.format.duration;
+    
+    if (durationSeconds && durationSeconds > 0) {
+      return Math.round(durationSeconds * 1000); // Convert to milliseconds
+    }
+    
+    // Fallback: estimate based on file size if metadata is missing
+    // MP3 files are typically ~1KB per second at 128kbps
+    logger.warn("[Affirmation Audio] Could not extract duration from metadata, using estimation");
+    const estimatedSeconds = buffer.length / 1000;
+    return Math.round(estimatedSeconds * 1000);
+  } catch (error) {
+    logger.error("[Affirmation Audio] Error parsing audio metadata, using estimation", error);
+    // Fallback estimation
+    const estimatedSeconds = buffer.length / 1000;
+    return Math.round(estimatedSeconds * 1000);
+  }
 }
 
 /**
@@ -122,7 +138,7 @@ export async function generateAffirmationAudio(
   text: string,
   voiceType: "neutral" | "confident" | "premium1" | "premium2" | "premium3" | "premium4" | "premium5" | "premium6" | "premium7" | "premium8",
   goal?: "sleep" | "focus" | "calm" | "manifest",
-  pace?: "slow" | "normal"
+  pace?: "slow" | "normal" // Deprecated: always uses "slow"
 ): Promise<{ audioUrl: string; durationMs: number }> {
   try {
     // Get affirmation from database
@@ -134,41 +150,80 @@ export async function generateAffirmationAudio(
       throw new Error(`Affirmation not found: ${affirmationId}`);
     }
 
-    // Generate cache key
-    const cacheKey = generateAffirmationCacheKey(text, voiceType, goal, pace);
+    // Always use slow pace
+    const paceValue = "slow";
 
-    // Check if audio already exists in database
-    if (affirmation.ttsAudioUrl && affirmation.audioDurationMs) {
+    // Generate cache key
+    const cacheKey = generateAffirmationCacheKey(text, voiceType, goal, paceValue);
+
+    // Check if audio version already exists in AffirmationAudio table
+    const existingAudio = await db.affirmationAudio.findUnique({
+      where: {
+        affirmationId_voiceId: {
+          affirmationId,
+          voiceId: voiceType,
+        },
+      },
+    });
+
+    if (existingAudio) {
       // Verify file exists on disk
       const filePath = getCachedAudioPath(cacheKey);
       if (fs.existsSync(filePath)) {
-        logger.debug(`[Affirmation Audio] Using existing audio for affirmation ${affirmationId}`);
+        logger.debug(`[Affirmation Audio] Using existing audio version for affirmation ${affirmationId}`, {
+          voiceId: voiceType,
+          pace: paceValue,
+        });
         return {
-          audioUrl: affirmation.ttsAudioUrl,
-          durationMs: affirmation.audioDurationMs,
+          audioUrl: existingAudio.audioUrl,
+          durationMs: existingAudio.durationMs,
         };
+      } else {
+        // File missing but record exists - regenerate
+        logger.warn(`[Affirmation Audio] Audio file missing for existing record, regenerating`, {
+          affirmationId,
+          cacheKey,
+        });
       }
     }
 
-    // Check if cached file exists on disk (by cache key)
+    // Check if cached file exists on disk (by cache key) - might be from old system
     const cachedPath = getCachedAudioPath(cacheKey);
     if (fs.existsSync(cachedPath)) {
       const buffer = fs.readFileSync(cachedPath);
       const duration = await getAudioDuration(buffer);
+      const audioUrl = `/api/tts/affirmation/${cacheKey}`;
       
-      // Update database with cached audio info
-      await db.affirmationLine.update({
-        where: { id: affirmationId },
-        data: {
-          ttsAudioUrl: `/api/tts/affirmation/${cacheKey}`,
-          ttsVoiceId: voiceType,
-          audioDurationMs: duration,
+      // Create or update AffirmationAudio record
+      await db.affirmationAudio.upsert({
+        where: {
+          affirmationId_voiceId: {
+            affirmationId,
+            voiceId: voiceType,
+          },
+        },
+        create: {
+          affirmationId,
+          voiceId: voiceType,
+          pace: paceValue,
+          cacheKey,
+          audioUrl,
+          durationMs: duration,
+        },
+        update: {
+          audioUrl,
+          durationMs: duration,
+          cacheKey,
+          pace: paceValue, // Always ensure pace is "slow"
         },
       });
 
-      logger.info(`[Affirmation Audio] Found cached audio for affirmation ${affirmationId}`);
+      logger.info(`[Affirmation Audio] Found cached audio and created AffirmationAudio record`, {
+        affirmationId,
+        voiceId: voiceType,
+      });
       return {
-        audioUrl: `/api/tts/affirmation/${cacheKey}`,
+        audioUrl,
         durationMs: duration,
       };
     }
@@ -198,9 +253,14 @@ export async function generateAffirmationAudio(
       ? {
           stability: goalConfig.stability,
           similarity_boost: goalConfig.similarity_boost,
-          speed: pace === "slow" ? goalConfig.speed * 0.90 : goalConfig.speed,
+          // Ensure speed stays within ElevenLabs valid range (0.7-1.2)
+          speed: Math.max(0.7, Math.min(1.2, pace === "slow" ? goalConfig.speed * 0.90 : goalConfig.speed)),
         }
-      : defaultSettings;
+      : {
+          ...defaultSettings,
+          // Ensure default speed is also within valid range
+          speed: Math.max(0.7, Math.min(1.2, defaultSettings.speed)),
+        };
 
     logger.info(`[Affirmation Audio] Generating audio for affirmation ${affirmationId}`, {
       text: text.substring(0, 50) + "...",
@@ -237,11 +297,58 @@ export async function generateAffirmationAudio(
     const buffer = Buffer.from(audioBuffer);
     const duration = await getAudioDuration(buffer);
 
-    // Save to disk
+    // Save to disk (for local fallback)
     fs.writeFileSync(cachedPath, buffer);
 
-    // Update database
-    const audioUrl = `/api/tts/affirmation/${cacheKey}`;
+    // Upload to Supabase Storage if configured
+    let audioUrl = `/api/tts/affirmation/${cacheKey}`; // Default to local URL
+    if (isSupabaseConfigured()) {
+      const supabaseUrl = await uploadFile(
+        STORAGE_BUCKETS.AFFIRMATIONS,
+        `${cacheKey}.mp3`,
+        buffer,
+        "audio/mpeg"
+      );
+      if (supabaseUrl) {
+        // Use Supabase URL directly (public URL or signed URL)
+        // For now, we'll still use the API endpoint which will redirect to Supabase
+        // This allows us to switch between local and Supabase seamlessly
+        logger.info(`[Affirmation Audio] Uploaded to Supabase Storage`, {
+          cacheKey,
+          supabaseUrl,
+        });
+      } else {
+        logger.warn(`[Affirmation Audio] Failed to upload to Supabase, using local storage`, {
+          cacheKey,
+        });
+      }
+    }
+
+    // Create or update AffirmationAudio record (new system - supports multiple voices)
+    await db.affirmationAudio.upsert({
+      where: {
+        affirmationId_voiceId: {
+          affirmationId,
+          voiceId: voiceType,
+        },
+      },
+      create: {
+        affirmationId,
+        voiceId: voiceType,
+        pace: paceValue,
+        cacheKey,
+        audioUrl,
+        durationMs: duration,
+      },
+      update: {
+        audioUrl,
+        durationMs: duration,
+        cacheKey,
+        pace: paceValue, // Always ensure pace is "slow"
+      },
+    });
+
+    // Also update legacy fields for backward compatibility (deprecated)
     await db.affirmationLine.update({
       where: { id: affirmationId },
       data: {
@@ -254,6 +361,8 @@ export async function generateAffirmationAudio(
     logger.info(`[Affirmation Audio] Generated and saved audio for affirmation ${affirmationId}`, {
       durationMs: duration,
       fileSize: buffer.length,
+      voiceId: voiceType,
+      storage: isSupabaseConfigured() ? "Supabase + Local" : "Local",
     });
 
     return {

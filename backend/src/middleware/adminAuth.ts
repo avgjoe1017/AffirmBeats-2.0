@@ -70,10 +70,28 @@ export async function adminAuth(c: Context<AppType>, next: Next) {
     }
   } else {
     // Option 2: Check if user has admin role in database (if you add a role field)
-    // For now, if ADMIN_EMAILS is not set, allow any authenticated user (development mode)
-    logger.debug("Admin access granted (no ADMIN_EMAILS configured)", {
+    // SECURITY: In production, require ADMIN_EMAILS to be set
+    if (env.NODE_ENV === "production" || env.NODE_ENV === "staging") {
+      logger.error("Admin access denied: ADMIN_EMAILS not configured in production", {
+        userId: user.id,
+        email: user.email,
+        path: c.req.path,
+        environment: env.NODE_ENV,
+      });
+      return c.json(
+        {
+          error: "FORBIDDEN",
+          message: "Admin access is not configured. Set ADMIN_EMAILS environment variable.",
+        },
+        403
+      );
+    }
+    
+    // Development mode: allow any authenticated user if ADMIN_EMAILS not set
+    logger.warn("Admin access granted in development mode (ADMIN_EMAILS not configured)", {
       userId: user.id,
       email: user.email,
+      environment: env.NODE_ENV,
     });
   }
 

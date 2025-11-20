@@ -11,11 +11,20 @@ module.exports = {
   theme: {
     // NOTE to AI: You can extend the theme with custom colors or styles here.
     extend: {
-      // For example, you can add a primary or secondary color here.
-      // colors: {
-      //   primary: "#INSERT_VALID_HEX_CODE",
-      //   secondary: "#INSERT_VALID_HEX_CODE",
-      // },
+      colors: {
+        // Brand colors - Recenter
+        'brand-teal': '#44B09E',
+        'brand-teal-dark': '#2A7A6E',
+        'brand-teal-light': '#5FC4B3',
+        'brand-teal-alpha': {
+          10: 'rgba(68, 176, 158, 0.1)',
+          20: 'rgba(68, 176, 158, 0.2)',
+          30: 'rgba(68, 176, 158, 0.3)',
+          50: 'rgba(68, 176, 158, 0.5)',
+          70: 'rgba(68, 176, 158, 0.7)',
+          90: 'rgba(68, 176, 158, 0.9)',
+        },
+      },
       fontSize: {
         xs: "10px",
         sm: "12px",

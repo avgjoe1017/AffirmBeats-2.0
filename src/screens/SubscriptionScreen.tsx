@@ -44,7 +44,7 @@ export default function SubscriptionScreen() {
 
     try {
       // Determine product ID from purchase or selected plan
-      const finalProductId = productId || (selectedPlan === "monthly" ? "com.affirmbeats.pro.monthly" : "com.affirmbeats.pro.annual");
+      const finalProductId = productId || (selectedPlan === "monthly" ? "com.recenter.pro.monthly" : "com.recenter.pro.annual");
       
       // Verify purchase with backend
       await api.post("/api/subscription/verify-purchase", {

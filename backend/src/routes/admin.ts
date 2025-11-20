@@ -819,6 +819,13 @@ adminRouter.get("/affirmations", zValidator("query", getAffirmationsSchema), asy
         orderBy,
         skip,
         take: limit,
+        include: {
+          audioVersions: {
+            orderBy: {
+              createdAt: "desc",
+            },
+          },
+        },
       }),
       db.affirmationLine.count({ where }),
     ]);
@@ -845,6 +852,7 @@ adminRouter.get("/affirmations", zValidator("query", getAffirmationsSchema), asy
 const createAffirmationSchema = z.object({
   text: z.string().min(1),
   goal: z.enum(["sleep", "focus", "calm", "manifest"]),
+  voiceType: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]),
   tags: z.array(z.string()).optional(),
   emotion: z.string().optional(),
 });
@@ -860,7 +868,46 @@ adminRouter.post("/affirmations", zValidator("json", createAffirmationSchema), a
         emotion: data.emotion || null,
       },
     });
-    return c.json(affirmation);
+
+    // Generate audio immediately
+    let audioGenerated = false;
+    let audioError: string | null = null;
+    try {
+      const { generateAffirmationAudio } = await import("../utils/affirmationAudio");
+        await generateAffirmationAudio(
+          affirmation.id,
+          data.text,
+          data.voiceType,
+          data.goal,
+          "slow" // Always slow pace
+        );
+      audioGenerated = true;
+      logger.info(`[Admin] Generated audio for affirmation ${affirmation.id}`, {
+        voiceType: data.voiceType,
+        goal: data.goal,
+      });
+    } catch (error) {
+      audioError = error instanceof Error ? error.message : String(error);
+      logger.error(`[Admin] Failed to generate audio for affirmation ${affirmation.id}`, error);
+    }
+
+    // Fetch updated affirmation with all audio versions
+    const updatedAffirmation = await db.affirmationLine.findUnique({
+      where: { id: affirmation.id },
+      include: {
+        audioVersions: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+    return c.json({
+      ...updatedAffirmation,
+      audioGenerated,
+      audioError,
+    });
   } catch (error) {
     logger.error("Failed to create affirmation", error);
     return c.json({ error: "INTERNAL_ERROR", message: "Failed to create affirmation" }, 500);
@@ -874,6 +921,7 @@ adminRouter.post("/affirmations", zValidator("json", createAffirmationSchema), a
 const updateAffirmationSchema = z.object({
   text: z.string().min(1).optional(),
   goal: z.enum(["sleep", "focus", "calm", "manifest"]).optional(),
+  voiceType: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]).optional(),
   tags: z.array(z.string()).optional(),
   emotion: z.string().optional(),
 });
@@ -882,14 +930,132 @@ adminRouter.patch("/affirmations/:id", zValidator("json", updateAffirmationSchem
   try {
     const id = c.req.param("id");
     const data = c.req.valid("json");
+    
+    // Get current affirmation to check if text/voice changed
+    const currentAffirmation = await db.affirmationLine.findUnique({
+      where: { id },
+    });
+
+    if (!currentAffirmation) {
+      return c.json({ error: "NOT_FOUND", message: "Affirmation not found" }, 404);
+    }
+
+    // Update affirmation
     const affirmation = await db.affirmationLine.update({
       where: { id },
-      data,
+      data: {
+        text: data.text,
+        goal: data.goal,
+        tags: data.tags,
+        emotion: data.emotion,
+      },
     });
-    return c.json(affirmation);
+
+    // Regenerate audio if text or voice changed
+    let audioGenerated = false;
+    let audioError: string | null = null;
+    if (data.voiceType && (data.text !== currentAffirmation.text || data.voiceType !== currentAffirmation.ttsVoiceId)) {
+      try {
+        const { generateAffirmationAudio } = await import("../utils/affirmationAudio");
+            await generateAffirmationAudio(
+              affirmation.id,
+              data.text || currentAffirmation.text,
+              data.voiceType,
+              data.goal || currentAffirmation.goal as any,
+              "slow" // Always slow pace
+            );
+        audioGenerated = true;
+        logger.info(`[Admin] Regenerated audio for affirmation ${affirmation.id}`, {
+          voiceType: data.voiceType,
+        });
+      } catch (error) {
+        audioError = error instanceof Error ? error.message : String(error);
+        logger.error(`[Admin] Failed to regenerate audio for affirmation ${affirmation.id}`, error);
+      }
+    }
+
+    // Fetch updated affirmation with all audio versions
+    const updatedAffirmation = await db.affirmationLine.findUnique({
+      where: { id },
+      include: {
+        audioVersions: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+    return c.json({
+      ...updatedAffirmation,
+      audioGenerated,
+      audioError,
+    });
   } catch (error) {
     logger.error("Failed to update affirmation", error);
     return c.json({ error: "INTERNAL_ERROR", message: "Failed to update affirmation" }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/affirmations/:id/generate-audio
+ * Generate audio for a specific voice version of an affirmation
+ */
+const generateAudioSchema = z.object({
+  voiceType: z.enum(["neutral", "confident", "premium1", "premium2", "premium3", "premium4", "premium5", "premium6", "premium7", "premium8"]),
+});
+
+adminRouter.post("/affirmations/:id/generate-audio", zValidator("json", generateAudioSchema), async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { voiceType } = c.req.valid("json");
+
+    const affirmation = await db.affirmationLine.findUnique({
+      where: { id },
+    });
+
+    if (!affirmation) {
+      return c.json({ error: "NOT_FOUND", message: "Affirmation not found" }, 404);
+    }
+
+    let audioGenerated = false;
+    let audioError: string | null = null;
+
+    try {
+      const { generateAffirmationAudio } = await import("../utils/affirmationAudio");
+      await generateAffirmationAudio(
+        affirmation.id,
+        affirmation.text,
+        voiceType,
+        affirmation.goal as any,
+        "slow" // Always slow pace
+      );
+      audioGenerated = true;
+    } catch (error) {
+      audioError = error instanceof Error ? error.message : String(error);
+      logger.error(`[Admin] Failed to generate audio for affirmation ${affirmation.id}`, error);
+    }
+
+    // Fetch updated affirmation with all audio versions
+    const updatedAffirmation = await db.affirmationLine.findUnique({
+      where: { id },
+      include: {
+        audioVersions: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+    return c.json({
+      ...updatedAffirmation,
+      audioGenerated,
+      audioError,
+    });
+  } catch (error) {
+    logger.error("Failed to generate audio", error);
+    return c.json({ error: "INTERNAL_ERROR", message: "Failed to generate audio" }, 500);
   }
 });
 

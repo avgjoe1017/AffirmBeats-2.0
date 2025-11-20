@@ -15,6 +15,8 @@ import { subscription } from "./routes/subscription";
 import { audioRouter } from "./routes/audio";
 import { metricsRouter } from "./routes/metrics";
 import { adminRouter } from "./routes/admin";
+import { webhooks } from "./routes/webhooks";
+import { legal } from "./routes/legal";
 import { type AppType } from "./types";
 import { resetMonthlyCounters } from "./utils/subscriptionReset";
 import { logger } from "./lib/logger";
@@ -24,6 +26,7 @@ import { errorHandler } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
 import { metricsMiddleware } from "./middleware/metricsMiddleware";
 import { adminAuth } from "./middleware/adminAuth";
+import { isSupabaseConfigured, getSupabaseClient } from "./lib/supabase";
 
 // AppType context adds user and session to the context, will be null if the user or session is null
 export const app = new Hono<AppType>();
@@ -160,6 +163,12 @@ app.route("/api/metrics", metricsRouter);
 logger.info("Mounting admin routes at /api/admin");
 app.route("/api/admin", adminRouter);
 
+logger.info("Mounting webhook routes at /api/webhooks");
+app.route("/api/webhooks", webhooks);
+
+logger.info("Mounting legal routes at /api/legal");
+app.route("/api/legal", legal);
+
 // Health check endpoint
 // Used by load balancers and monitoring tools to verify service is running
 app.get("/health", async (c) => {
@@ -174,6 +183,7 @@ app.get("/health", async (c) => {
     checks: {
       database: "unknown",
       redis: "unknown",
+      supabase: "unknown",
       // Add more checks as needed (external APIs, etc.)
     },
     metrics: {
@@ -218,6 +228,41 @@ app.get("/health", async (c) => {
     logger.error("Redis health check failed", error);
     health.checks.redis = "error";
     // Don't degrade status if Redis is unavailable (it's optional)
+  }
+
+  // Check Supabase Storage connectivity
+  try {
+    if (isSupabaseConfigured()) {
+      const supabaseStartTime = Date.now();
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        // Test access to one bucket to verify connectivity
+        const { error } = await supabase.storage
+          .from("binaural")
+          .list("", { limit: 1 });
+        
+        const supabaseDuration = Date.now() - supabaseStartTime;
+        if (!error) {
+          health.checks.supabase = "ok";
+          logger.debug("Supabase health check passed", { duration: `${supabaseDuration}ms` });
+        } else {
+          health.checks.supabase = "error";
+          health.status = "degraded";
+          logger.warn("Supabase health check failed", { error: error.message });
+        }
+      } else {
+        health.checks.supabase = "unavailable";
+        health.status = "degraded";
+      }
+    } else {
+      health.checks.supabase = "not_configured";
+      // Don't degrade status if Supabase is not configured (it's optional with fallback)
+    }
+  } catch (error) {
+    logger.error("Supabase health check failed", error);
+    health.checks.supabase = "error";
+    health.status = "degraded";
+    // Degrade status since Supabase is important for audio delivery
   }
 
   // Add basic metrics snapshot

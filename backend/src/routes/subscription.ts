@@ -178,7 +178,7 @@ subscription.post(
     const { productId, platform } = c.req.valid("json");
 
     // Verify product ID matches expected Pro products (monthly or annual)
-    const validProductIds = ["com.affirmbeats.pro.monthly", "com.affirmbeats.pro.annual"];
+    const validProductIds = ["com.recenter.pro.monthly", "com.recenter.pro.annual"];
     if (!validProductIds.includes(productId)) {
       logger.warn("Invalid product ID for purchase verification", { 
         userId: session.userId, 

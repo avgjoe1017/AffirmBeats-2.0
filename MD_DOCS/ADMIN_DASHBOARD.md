@@ -5,7 +5,7 @@
 
 ## Overview
 
-The Admin Dashboard provides comprehensive monitoring and analytics for the AffirmBeats backend. It tracks costs, usage, quality metrics, and system health in real-time.
+The Admin Dashboard provides comprehensive monitoring and analytics for the Recenter backend. It tracks costs, usage, quality metrics, and system health in real-time.
 
 ## Features
 

@@ -5,7 +5,7 @@
 
 ## Overview
 
-This document summarizes all the production readiness improvements that have been completed for the AffirmBeats app.
+This document summarizes all the production readiness improvements that have been completed for the Recenter app.
 
 ## ✅ Completed Improvements
 

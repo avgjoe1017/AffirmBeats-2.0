@@ -21,6 +21,9 @@ const prismaClient = new PrismaClient({
   log: env.NODE_ENV === "development" 
     ? ["query", "error", "warn"] 
     : ["error"],
+  // Note: For PostgreSQL connection pool configuration, add parameters to DATABASE_URL:
+  // postgresql://user:pass@host:port/db?connection_limit=10&pool_timeout=20&connect_timeout=10
+  // Prisma automatically manages connection pooling based on these parameters
 });
 
 /**
@@ -28,10 +31,39 @@ const prismaClient = new PrismaClient({
  * Applies SQLite-specific pragmas if using SQLite
  * No special initialization needed for PostgreSQL
  */
+/**
+ * Retry connection with exponential backoff
+ */
+async function connectWithRetry(maxRetries = 3, delay = 1000): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await prismaClient.$connect();
+      return; // Success
+    } catch (error) {
+      const isConnectionError = error instanceof Error && (
+        error.message.includes("ConnectionReset") ||
+        error.message.includes("ECONNRESET") ||
+        error.message.includes("10054") ||
+        error.message.includes("forcibly closed")
+      );
+
+      if (isConnectionError && attempt < maxRetries) {
+        const waitTime = delay * Math.pow(2, attempt - 1);
+        logger.warn(`Database connection failed (attempt ${attempt}/${maxRetries}), retrying in ${waitTime}ms...`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+        continue;
+      }
+      throw error; // Re-throw if not a connection error or max retries reached
+    }
+  }
+}
+
 async function initDatabase() {
   try {
-    // Test connection
-    await prismaClient.$connect();
+    // Test connection with retry logic for connection resets
+    await connectWithRetry();
     logger.info("Database connected successfully", {
       database: env.DATABASE_URL.startsWith("file:") ? "SQLite" : "PostgreSQL",
     });
@@ -55,11 +87,15 @@ async function initDatabase() {
       }
     } else {
       logger.debug("Using PostgreSQL database");
-      // PostgreSQL doesn't need pragmas - connection pooling is handled by Prisma
+      // PostgreSQL connection pool configuration
+      // Connection pooling is handled by Prisma, but we can add connection string parameters:
+      // - ?connection_limit=10&pool_timeout=20 (add to DATABASE_URL if needed)
+      // - Prisma automatically manages connection pooling
     }
   } catch (error) {
-    logger.error("Failed to connect to database", {
+    logger.error("Failed to connect to database after retries", {
       error: error instanceof Error ? error.message : String(error),
+      errorCode: error instanceof Error && 'code' in error ? error.code : undefined,
     });
     throw error;
   }
@@ -67,9 +103,20 @@ async function initDatabase() {
 
 // Initialize database on module load
 initDatabase().catch((error) => {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const isConnectionReset = errorMessage.includes("ConnectionReset") || 
+                           errorMessage.includes("ECONNRESET") ||
+                           errorMessage.includes("10054") ||
+                           errorMessage.includes("forcibly closed");
+  
   logger.error("Failed to initialize database", {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
+    isConnectionReset,
+    suggestion: isConnectionReset 
+      ? "Check database server status, network connectivity, and connection pool settings. Consider adding ?connection_limit=10&pool_timeout=20 to DATABASE_URL"
+      : "Check DATABASE_URL configuration and database server logs",
   });
+  
   // Don't exit in production - allow graceful degradation
   if (env.NODE_ENV === "development") {
     process.exit(1);

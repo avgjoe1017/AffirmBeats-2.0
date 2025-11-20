@@ -1,7 +1,7 @@
 # Bugs and Improvement Opportunities
 
 **Generated:** 2025-01-XX  
-**Codebase:** AffirmBeats 2.0
+**Codebase:** Recenter
 
 ---
 

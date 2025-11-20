@@ -1,4 +1,4 @@
-# AffirmBeats 2.0: Complete Implementation Roadmap
+# Recenter: Complete Implementation Roadmap
 
 **Last Updated:** November 16, 2025  
 **Status:** Ready for Implementation

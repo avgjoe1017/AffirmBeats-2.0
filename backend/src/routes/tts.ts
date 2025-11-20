@@ -16,6 +16,7 @@ import { logger } from "../lib/logger";
 import { metricHelpers } from "../lib/metrics";
 import { env } from "../env";
 import { db } from "../db";
+import { isSupabaseConfigured, getSignedUrl, STORAGE_BUCKETS } from "../lib/supabase";
 
 const ttsRouter = new Hono<AppType>();
 
@@ -292,7 +293,10 @@ ttsRouter.post(
         c.header("Content-Type", "audio/mpeg");
         c.header("Content-Length", cachedAudio.length.toString());
         c.header("X-Cache", "HIT");
-        return c.body(cachedAudio);
+        // Convert Buffer to ArrayBuffer for Hono compatibility
+        const arrayBuffer = new ArrayBuffer(cachedAudio.length);
+        new Uint8Array(arrayBuffer).set(cachedAudio);
+        return c.body(arrayBuffer);
       }
     }
 
@@ -415,7 +419,10 @@ ttsRouter.get("/cache/:cacheKey", async (c) => {
     c.header("Content-Length", cachedAudio.length.toString());
     c.header("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
     
-    return c.body(cachedAudio);
+    // Convert Buffer to ArrayBuffer for Hono compatibility
+    const arrayBuffer = new ArrayBuffer(cachedAudio.length);
+    new Uint8Array(arrayBuffer).set(cachedAudio);
+    return c.body(arrayBuffer);
   } catch (error) {
     logger.error("Error serving cached TTS audio", error, { 
       cacheKey: c.req.param("cacheKey") 
@@ -443,6 +450,17 @@ ttsRouter.get("/affirmation/:cacheKey", async (c) => {
       }, 400);
     }
 
+    // Try Supabase Storage first (if configured)
+    if (isSupabaseConfigured()) {
+      const signedUrl = await getSignedUrl(STORAGE_BUCKETS.AFFIRMATIONS, `${cacheKey}.mp3`, 3600);
+      if (signedUrl) {
+        logger.info("Redirecting affirmation audio to Supabase Storage", { cacheKey });
+        return c.redirect(signedUrl, 302);
+      }
+      // If Supabase fails, fall through to local file serving
+      logger.warn("Supabase affirmation audio not found, falling back to local", { cacheKey });
+    }
+
     const cachedAudio = await getCachedAffirmationAudio(cacheKey);
     
     if (!cachedAudio) {
@@ -457,7 +475,10 @@ ttsRouter.get("/affirmation/:cacheKey", async (c) => {
     c.header("Content-Length", cachedAudio.length.toString());
     c.header("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
     
-    return c.body(cachedAudio);
+    // Convert Buffer to ArrayBuffer for Hono compatibility
+    const arrayBuffer = new ArrayBuffer(cachedAudio.length);
+    new Uint8Array(arrayBuffer).set(cachedAudio);
+    return c.body(arrayBuffer);
   } catch (error) {
     logger.error("Error serving cached affirmation audio", error, { 
       cacheKey: c.req.param("cacheKey") 

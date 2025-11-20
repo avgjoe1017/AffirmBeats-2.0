@@ -215,7 +215,7 @@ const LibraryScreen = ({ navigation }: Props) => {
               className="active:opacity-80"
             >
               <LinearGradient
-                colors={["#8B7AB8", "#6B5A98"]}
+                colors={["#44B09E", "#2A7A6E"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={{

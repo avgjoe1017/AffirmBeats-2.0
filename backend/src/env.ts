@@ -51,7 +51,7 @@ const envSchema = z.object({
   AWS_REGION: z.string().optional().default("us-east-1"),
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  CLOUDWATCH_NAMESPACE: z.string().optional().default("AffirmBeats"),
+  CLOUDWATCH_NAMESPACE: z.string().optional().default("Recenter"),
 
   // Google OAuth Configuration
   // GOOGLE_CLIENT_ID: z.string().min(1, "GOOGLE_CLIENT_ID is required"),
@@ -59,6 +59,11 @@ const envSchema = z.object({
 
   // Admin Configuration
   ADMIN_EMAILS: z.string().optional().default(""), // Comma-separated list of admin emails
+
+  // Supabase Configuration (for Storage)
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(), // Service role key for server-side operations
+  SUPABASE_ANON_KEY: z.string().optional(), // Anon key for client-side (if needed)
 });
 
 type EnvSchema = typeof envSchema;

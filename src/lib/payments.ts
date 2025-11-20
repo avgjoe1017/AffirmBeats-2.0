@@ -28,14 +28,14 @@ async function getIAPModule(): Promise<any | null> {
 // These must match the product IDs configured in App Store Connect / Google Play Console
 export const PRO_PRODUCT_IDS = {
   monthly: Platform.select({
-    ios: "com.affirmbeats.pro.monthly",
-    android: "com.affirmbeats.pro.monthly",
-    default: "com.affirmbeats.pro.monthly",
+    ios: "com.recenter.pro.monthly",
+    android: "com.recenter.pro.monthly",
+    default: "com.recenter.pro.monthly",
   }),
   annual: Platform.select({
-    ios: "com.affirmbeats.pro.annual",
-    android: "com.affirmbeats.pro.annual",
-    default: "com.affirmbeats.pro.annual",
+    ios: "com.recenter.pro.annual",
+    android: "com.recenter.pro.annual",
+    default: "com.recenter.pro.annual",
   }),
 };
 

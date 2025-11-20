@@ -5,7 +5,7 @@
 
 ## Overview
 
-This guide provides information about the monitoring and metrics capabilities in the AffirmBeats backend.
+This guide provides information about the monitoring and metrics capabilities in the Recenter backend.
 
 ## Metrics Collection
 

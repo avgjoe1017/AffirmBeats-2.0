@@ -5,7 +5,7 @@
 
 ## Overview
 
-This guide provides a quick reference for deploying AffirmBeats to production.
+This guide provides a quick reference for deploying Recenter to production.
 
 ## Prerequisites Checklist
 

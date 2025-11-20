@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable, Modal, Alert } from "react-native";
+import { View, Text, ScrollView, Pressable, Modal, Alert, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Volume2, Wind, Clock, ChevronDown, Timer, Check, X, Crown, ChevronRight, RotateCcw } from "lucide-react-native";
+import { Volume2, Wind, Clock, ChevronDown, Timer, Check, X, Crown, ChevronRight, RotateCcw, FileText, Shield } from "lucide-react-native";
 import Animated from "react-native-reanimated";
 import { standardFadeIn, fadeInWithDelay } from "@/lib/animations";
 import type { BottomTabScreenProps } from "@/navigation/types";
 import { useAppStore } from "@/state/appStore";
 import LockIcon from "@/components/LockIcon";
 import PaywallLockModal from "@/components/PaywallLockModal";
+import { BACKEND_URL } from "@/lib/api";
 
 type Props = BottomTabScreenProps<"SettingsTab">;
 
@@ -98,7 +99,7 @@ const SettingsScreen = ({ navigation }: Props) => {
               </LinearGradient>
             ) : (
               <LinearGradient
-                colors={["#8B7AB8", "#6B5A98"]}
+                colors={["#44B09E", "#2A7A6E"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 className="rounded-2xl p-[2px]"
@@ -123,7 +124,7 @@ const SettingsScreen = ({ navigation }: Props) => {
         {/* Voice Selector */}
         <Animated.View entering={fadeInWithDelay(100)} className="mb-6">
           <View className="flex-row items-center mb-3">
-            <Volume2 size={20} color="#8B7AB8" />
+            <Volume2 size={20} color="#44B09E" />
             <Text className="text-white text-lg font-semibold ml-2">Voice</Text>
           </View>
           <Pressable
@@ -146,7 +147,7 @@ const SettingsScreen = ({ navigation }: Props) => {
         {/* Background Selector */}
         <Animated.View entering={fadeInWithDelay(200)} className="mb-6">
           <View className="flex-row items-center mb-3">
-            <Wind size={20} color="#8B7AB8" />
+            <Wind size={20} color="#44B09E" />
             <Text className="text-white text-lg font-semibold ml-2">Background Sound</Text>
           </View>
           <Pressable
@@ -170,7 +171,7 @@ const SettingsScreen = ({ navigation }: Props) => {
         {/* Duration */}
         <Animated.View entering={fadeInWithDelay(300)} className="mb-6">
           <View className="flex-row items-center mb-2">
-            <Clock size={20} color="#8B7AB8" />
+            <Clock size={20} color="#44B09E" />
             <Text className="text-white text-lg font-semibold ml-2">Session Duration</Text>
           </View>
           <Text className="text-gray-500 text-sm mb-3">Select duration</Text>
@@ -193,13 +194,13 @@ const SettingsScreen = ({ navigation }: Props) => {
                   <View
                     className={`py-3 px-4 rounded-xl border-2 relative ${
                       preferences.duration === duration.value
-                        ? "bg-purple-500/20 border-purple-400"
+                        ? "bg-[#44B09E]/20 border-[#44B09E]"
                         : "bg-white/5 border-white/10"
                     } ${isLocked ? "opacity-60" : ""}`}
                   >
                     <Text
                       className={`text-center font-medium ${
-                        preferences.duration === duration.value ? "text-purple-300" : "text-gray-400"
+                        preferences.duration === duration.value ? "text-[#5FC4B3]" : "text-gray-400"
                       }`}
                     >
                       {duration.label}
@@ -217,7 +218,7 @@ const SettingsScreen = ({ navigation }: Props) => {
         {/* Affirmation Spacing */}
         <Animated.View entering={fadeInWithDelay(400)} className="mb-6">
           <View className="flex-row items-center mb-3">
-            <Timer size={20} color="#8B7AB8" />
+            <Timer size={20} color="#44B09E" />
             <Text className="text-white text-lg font-semibold ml-2">Seconds Between Affirmations</Text>
           </View>
           <ScrollView
@@ -234,13 +235,13 @@ const SettingsScreen = ({ navigation }: Props) => {
                 <View
                   className={`py-3 px-5 rounded-xl border-2 ${
                     currentSpacing === seconds
-                      ? "bg-purple-500/20 border-purple-400"
+                      ? "bg-[#44B09E]/20 border-[#44B09E]"
                       : "bg-white/5 border-white/10"
                   }`}
                 >
                   <Text
                     className={`text-center font-medium ${
-                      currentSpacing === seconds ? "text-purple-300" : "text-gray-400"
+                      currentSpacing === seconds ? "text-[#5FC4B3]" : "text-gray-400"
                     }`}
                   >
                     {seconds}s
@@ -255,7 +256,7 @@ const SettingsScreen = ({ navigation }: Props) => {
         {hasCompletedOnboarding && (
           <Animated.View entering={fadeInWithDelay(500)} className="mb-6">
             <View className="flex-row items-center mb-3">
-              <RotateCcw size={20} color="#8B7AB8" />
+              <RotateCcw size={20} color="#44B09E" />
               <Text className="text-white text-lg font-semibold ml-2">Onboarding</Text>
             </View>
             <Pressable
@@ -335,7 +336,7 @@ const SettingsScreen = ({ navigation }: Props) => {
                   className="active:opacity-80"
                 >
                   <View className={`py-4 px-4 rounded-xl mb-3 ${
-                    preferences.voice === voice.value ? "bg-purple-500/20" : "bg-white/5"
+                    preferences.voice === voice.value ? "bg-[#44B09E]/20" : "bg-white/5"
                   } ${isLocked ? "opacity-60" : ""}`}>
                     <View className="flex-row items-center justify-between">
                       <View className="flex-1 flex-row items-center">
@@ -343,8 +344,8 @@ const SettingsScreen = ({ navigation }: Props) => {
                           <View className="flex-row items-center">
                             <Text className="text-white text-base font-medium">{voice.label}</Text>
                             {voice.isPremium && (
-                              <View className="ml-2 px-2 py-0.5 bg-purple-600/30 rounded-md">
-                                <Text className="text-purple-400 text-xs font-semibold">PRO</Text>
+                              <View className="ml-2 px-2 py-0.5 bg-[#44B09E]/30 rounded-md">
+                                <Text className="text-[#44B09E] text-xs font-semibold">PRO</Text>
                               </View>
                             )}
                           </View>
@@ -352,7 +353,7 @@ const SettingsScreen = ({ navigation }: Props) => {
                         </View>
                       </View>
                       {preferences.voice === voice.value && !isLocked && (
-                        <Check size={20} color="#A78BFA" />
+                        <Check size={20} color="#44B09E" />
                       )}
                       {isLocked && (
                         <Crown size={20} color="#9E9EB0" />
@@ -400,22 +401,22 @@ const SettingsScreen = ({ navigation }: Props) => {
                     className="active:opacity-80"
                   >
                     <View className={`py-4 px-4 rounded-xl mb-3 relative ${
-                      preferences.noise === bg.value ? "bg-purple-500/20" : "bg-white/5"
+                      preferences.noise === bg.value ? "bg-[#44B09E]/20" : "bg-white/5"
                     } ${isLocked ? "opacity-60" : ""}`}>
                       <View className="flex-row items-center justify-between">
                         <View className="flex-1">
                           <View className="flex-row items-center">
                             <Text className="text-white text-base font-medium">{bg.label}</Text>
                             {bg.isPremium && (
-                              <View className="ml-2 px-2 py-0.5 bg-purple-600/30 rounded-md">
-                                <Text className="text-purple-400 text-xs font-semibold">PRO</Text>
+                              <View className="ml-2 px-2 py-0.5 bg-[#44B09E]/30 rounded-md">
+                                <Text className="text-[#44B09E] text-xs font-semibold">PRO</Text>
                               </View>
                             )}
                           </View>
                           <Text className="text-gray-400 text-sm mt-1">{bg.description}</Text>
                         </View>
                         {preferences.noise === bg.value && !isLocked && (
-                          <Check size={20} color="#A78BFA" />
+                          <Check size={20} color="#44B09E" />
                         )}
                         {isLocked && (
                           <Crown size={20} color="#9E9EB0" />
@@ -439,6 +440,41 @@ const SettingsScreen = ({ navigation }: Props) => {
         }}
         featureName={lockedFeatureName}
       />
+
+      {/* Legal Links Footer */}
+      <Animated.View entering={fadeInWithDelay(300)} className="mt-8 mb-8">
+        <View className="border-t border-white/10 pt-6">
+          <Text className="text-gray-500 text-xs text-center mb-4">Legal</Text>
+          <View className="flex-row justify-center gap-6">
+            <Pressable
+              onPress={() => {
+                const url = `${BACKEND_URL}/api/legal/privacy-policy`;
+                Linking.openURL(url).catch((err) => {
+                  console.error("Failed to open Privacy Policy:", err);
+                  Alert.alert("Error", "Could not open Privacy Policy. Please try again later.");
+                });
+              }}
+              className="flex-row items-center gap-2 active:opacity-70"
+            >
+              <Shield size={16} color="#44B09E" />
+              <Text className="text-[#44B09E] text-sm">Privacy Policy</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const url = `${BACKEND_URL}/api/legal/terms-of-service`;
+                Linking.openURL(url).catch((err) => {
+                  console.error("Failed to open Terms of Service:", err);
+                  Alert.alert("Error", "Could not open Terms of Service. Please try again later.");
+                });
+              }}
+              className="flex-row items-center gap-2 active:opacity-70"
+            >
+              <FileText size={16} color="#44B09E" />
+              <Text className="text-[#44B09E] text-sm">Terms of Service</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Animated.View>
     </LinearGradient>
   );
 };

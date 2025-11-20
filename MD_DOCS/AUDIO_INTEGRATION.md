@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the audio integration system for AffirmBeats 2.0, which supports multi-track playback with three independent audio layers:
+This document outlines the audio integration system for Recenter, which supports multi-track playback with three independent audio layers:
 
 1. **Affirmations** - TTS-generated audio from the backend
 2. **Binaural Beats** - Local audio files matching the selected frequency category

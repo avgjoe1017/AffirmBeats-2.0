@@ -6,8 +6,8 @@ import SubscriptionScreen from "@/src/screens/SubscriptionScreen";
 // Mock payments module to control products and purchase behavior
 jest.mock("@/src/lib/payments", () => ({
   getProducts: jest.fn().mockResolvedValue([
-    { productId: "com.affirmbeats.pro.monthly", price: "$9.99" },
-    { productId: "com.affirmbeats.pro.annual", price: "$99.99" },
+    { productId: "com.recenter.pro.monthly", price: "$9.99" },
+    { productId: "com.recenter.pro.annual", price: "$99.99" },
   ]),
   purchasePro: jest.fn().mockResolvedValue(undefined),
   hasPurchasedPro: jest.fn().mockResolvedValue(false),

@@ -232,7 +232,7 @@ const AffirmationLibraryModal = ({
           <View className="px-6 py-4 border-t border-white/10 bg-black/50">
             <Pressable onPress={handleAddSelected} className="active:opacity-80">
               <LinearGradient
-                colors={["#8B7AB8", "#6B5A98"]}
+                colors={["#44B09E", "#2A7A6E"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 className="py-4 rounded-2xl items-center"

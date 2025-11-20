@@ -124,6 +124,30 @@ export async function createTestSession(
  */
 export async function cleanupTestData() {
   try {
+    // Delete session affirmations first (foreign key constraint)
+    // Get all test session IDs first
+    const testSessions = await db.affirmationSession.findMany({
+      where: {
+        id: {
+          startsWith: "test-",
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    const testSessionIds = testSessions.map((s) => s.id);
+    if (testSessionIds.length > 0) {
+      await db.sessionAffirmation.deleteMany({
+        where: {
+          sessionId: {
+            in: testSessionIds,
+          },
+        },
+      });
+    }
+
     // Delete test sessions
     await db.affirmationSession.deleteMany({
       where: {
@@ -132,6 +156,10 @@ export async function cleanupTestData() {
         },
       },
     });
+
+    // Delete test affirmation lines (may be shared, so be careful)
+    // Only delete if they're not referenced by other sessions
+    // For now, we'll leave them as they might be reused
 
     // Delete test preferences
     await db.userPreferences.deleteMany({

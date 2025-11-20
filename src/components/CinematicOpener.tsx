@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { View, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Sparkles } from "lucide-react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,6 +10,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
+import LoopLogo from "@/components/LoopLogo";
 
 interface CinematicOpenerProps {
   onComplete: () => void;
@@ -106,7 +106,7 @@ const CinematicOpener: React.FC<CinematicOpenerProps> = ({ onComplete }) => {
 
       {/* Logo */}
       <Animated.View style={[styles.logoContainer, logoStyle]}>
-        <Sparkles size={64} color="#8B7AB8" strokeWidth={1.5} />
+        <LoopLogo size={64} color="#44B09E" strokeWidth={2.5} />
       </Animated.View>
     </View>
   );
@@ -128,8 +128,8 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: "#8B7AB8",
-    shadowColor: "#8B7AB8",
+    backgroundColor: "#44B09E",
+    shadowColor: "#44B09E",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 40,

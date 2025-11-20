@@ -1,8 +1,8 @@
-# Affirmation Beats
+# Recenter
 
 **Hear what you need to believe.**
 
-Affirmation Beats is an AI-powered wellness app that generates personalized affirmation audio sessions paired with calming soundscapes. Built with Expo and React Native.
+Recenter is an AI-powered wellness app that generates personalized affirmation audio sessions paired with calming soundscapes. Built with Expo and React Native.
 
 ## Recent Updates
 

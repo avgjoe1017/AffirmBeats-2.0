@@ -1,6 +1,6 @@
 # Admin Command Screens
 
-Complete admin interface for managing AffirmBeats operations.
+Complete admin interface for managing Recenter operations.
 
 ## Access
 
