@@ -9,6 +9,7 @@ import { type AppType } from "../types";
 import { db } from "../db";
 import { getCached, deleteCache } from "../lib/redis";
 import { logger } from "../lib/logger";
+import { rateLimiters } from "../middleware/rateLimit";
 
 const preferencesRouter = new Hono<AppType>();
 
@@ -46,6 +47,7 @@ preferencesRouter.get("/", async (c) => {
             noise: "rain",
             pronounStyle: "you",
             intensity: "gentle",
+            affirmationSpacing: 8, // Default 8 seconds
           },
         });
       }
@@ -61,13 +63,14 @@ preferencesRouter.get("/", async (c) => {
     noise: preferences.noise as "rain" | "brown" | "none",
     pronounStyle: preferences.pronounStyle as "you" | "i",
     intensity: preferences.intensity as "gentle" | "assertive",
+    affirmationSpacing: preferences.affirmationSpacing || 8, // Default to 8 if not set
   } satisfies GetPreferencesResponse);
 });
 
 // ============================================
 // PATCH /api/preferences - Update user preferences
 // ============================================
-preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema), async (c) => {
+preferencesRouter.patch("/", rateLimiters.api, zValidator("json", updatePreferencesRequestSchema), async (c) => {
   const user = c.get("user");
 
   if (!user) {
@@ -92,6 +95,7 @@ preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema),
       noise: updates.noise ?? "rain",
       pronounStyle: updates.pronounStyle ?? "you",
       intensity: updates.intensity ?? "gentle",
+      affirmationSpacing: updates.affirmationSpacing ?? 8, // Default 8 seconds
     },
   });
 
@@ -106,6 +110,7 @@ preferencesRouter.patch("/", zValidator("json", updatePreferencesRequestSchema),
     noise: preferences.noise as "rain" | "brown" | "none",
     pronounStyle: preferences.pronounStyle as "you" | "i",
     intensity: preferences.intensity as "gentle" | "assertive",
+    affirmationSpacing: preferences.affirmationSpacing || 8, // Default to 8 if not set
   } satisfies GetPreferencesResponse);
 });
 

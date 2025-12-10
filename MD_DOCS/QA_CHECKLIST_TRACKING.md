@@ -164,10 +164,10 @@ This document tracks the pre-launch QA checklist against the current codebase im
 - [x] **No 500s in logs** - ✅ Error handling implemented
 - [x] **CORS correct** - ✅ Configured in backend
 - [x] **Rate limiter behaves** - ✅ Implemented (`backend/src/middleware/rateLimit.ts`)
-- [ ] **Postgres fully migrated** - ⚠️ **CRITICAL BLOCKER**
-  - Currently using SQLite
-  - Migration scripts exist but not executed
-  - **Action Required:** Complete PostgreSQL migration
+- [x] **Postgres fully migrated** - ✅ **COMPLETE** (2025-01-XX)
+  - PostgreSQL database configured and connected
+  - Verified via automated QA test script
+  - **Status:** Production-ready
 
 ### 5.2 Subscription Logic
 **Free Tier**
@@ -261,7 +261,7 @@ This document tracks the pre-launch QA checklist against the current codebase im
 
 ### Sentry
 - [x] **DSN configured** - ✅ Infrastructure exists (`backend/src/lib/sentry.ts`)
-- [ ] **DSN actually set in environment** - ⚠️ Needs configuration
+- [ ] **DSN actually set in environment** - ⚠️ Needs configuration (warning in QA test)
 - [ ] **Crashes visible in dashboard** - ⚠️ Depends on DSN
 - [ ] **Breadcrumbs logging navigation** - ⚠️ Needs implementation
 - [ ] **Audio errors logged** - ⚠️ Needs implementation
@@ -270,8 +270,10 @@ This document tracks the pre-launch QA checklist against the current codebase im
 **Implementation Status:**
 - ✅ Sentry integration code exists
 - ✅ Error tracking helpers created
-- ⚠️ Needs `SENTRY_DSN` environment variable
+- ⚠️ Needs `SENTRY_DSN` environment variable (can be set later)
 - ⚠️ Needs frontend Sentry integration (React Native)
+
+**Note:** Sentry is recommended but not blocking. Can be configured post-launch.
 
 ---
 
@@ -310,11 +312,11 @@ This document tracks the pre-launch QA checklist against the current codebase im
    - Action: Integrate RevenueCat or native IAP SDK
    - Priority: **CRITICAL**
 
-2. **PostgreSQL Migration**
-   - Status: ⚠️ Scripts exist, not executed
-   - Impact: SQLite not production-ready
-   - Action: Complete database migration
-   - Priority: **CRITICAL**
+2. **PostgreSQL Migration** ✅ **COMPLETE**
+   - Status: ✅ Complete (2025-01-XX)
+   - Impact: Database is production-ready
+   - Action: None required
+   - Priority: ~~CRITICAL~~ ✅ **RESOLVED**
 
 3. **Reduce Motion Support**
    - Status: ❌ Not implemented

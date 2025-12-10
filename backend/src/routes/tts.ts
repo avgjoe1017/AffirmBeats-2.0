@@ -50,7 +50,7 @@ const VOICE_CONFIG_BY_GOAL = {
     stability: 0.80,        // Most stable
     similarity_boost: 0.60, // Natural
     style: 0.0,
-    speed: 0.65,            // Much slower for sleep
+    speed: 0.75,            // Slower for sleep (ElevenLabs min: 0.7)
     use_speaker_boost: true
   },
   calm: {
@@ -99,8 +99,9 @@ function getVoiceSettings(goal?: string, pace?: "slow" | "normal") {
   // Apply pace adjustment to goal-based speed
   // Goal configs have base speeds, but we still respect pace preference
   // For pace "slow", reduce speed by ~10%, for "normal" use goal speed
+  // Ensure speed stays within ElevenLabs limits (0.7 - 1.2)
   const paceMultiplier = pace === "slow" ? 0.90 : 1.0;
-  const adjustedSpeed = goalConfig.speed * paceMultiplier;
+  const adjustedSpeed = Math.max(0.7, Math.min(1.2, goalConfig.speed * paceMultiplier));
 
   // Return only parameters supported by ElevenLabs API
   // Supported: stability, similarity_boost, speed
@@ -114,10 +115,16 @@ function getVoiceSettings(goal?: string, pace?: "slow" | "normal") {
 
 /**
  * Check if user has access to a premium voice
+ * Default sessions (starting with "default-") always have access to premium voices
  */
-async function canUsePremiumVoice(userId: string | null): Promise<boolean> {
+async function canUsePremiumVoice(userId: string | null, sessionId?: string): Promise<boolean> {
+  // Default sessions always have access to premium voices
+  if (sessionId && sessionId.startsWith("default-")) {
+    return true;
+  }
+
   if (!userId) {
-    return false; // Guest users can't use premium voices
+    return false; // Guest users can't use premium voices (except for default sessions)
   }
 
   const subscription = await db.userSubscription.findUnique({
@@ -149,10 +156,15 @@ ttsRouter.post("/generate", rateLimiters.tts, zValidator("json", generateTTSRequ
   const { text, voiceType } = c.req.valid("json");
   
   // Check premium voice access
+  // Note: sessionId is not available in this endpoint, but default sessions
+  // should be handled via the playlist endpoint which calls generateAffirmationAudio
   if (PREMIUM_VOICES.includes(voiceType)) {
     const session = c.get("session");
     const userId = session?.userId ?? null;
-    const hasAccess = await canUsePremiumVoice(userId);
+    // Try to get sessionId from request body if available (for generate-session)
+    const body = c.req.valid("json") as any;
+    const sessionId = body?.sessionId || null;
+    const hasAccess = await canUsePremiumVoice(userId, sessionId);
     
     if (!hasAccess) {
       return c.json({
@@ -255,7 +267,10 @@ ttsRouter.post(
     if (PREMIUM_VOICES.includes(voiceType)) {
       const session = c.get("session");
       const userId = session?.userId ?? null;
-      const hasAccess = await canUsePremiumVoice(userId);
+      // Try to get sessionId from request body if available
+      const body = c.req.valid("json") as any;
+      const sessionId = body?.sessionId || null;
+      const hasAccess = await canUsePremiumVoice(userId, sessionId);
       
       if (!hasAccess) {
         return c.json({
@@ -331,7 +346,7 @@ ttsRouter.post(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "xi-api-key": ELEVENLABS_API_KEY,
+          "xi-api-key": ELEVENLABS_API_KEY!,
         },
         body: JSON.stringify({
           text: combinedText,

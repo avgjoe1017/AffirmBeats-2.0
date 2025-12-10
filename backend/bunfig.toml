@@ -1,0 +1,13 @@
+# Bun configuration file
+# This configures Bun's behavior for this project
+
+# Note: Bun's --hot flag determines the project directory based on package.json location.
+# Files outside the project directory (like ../shared/) will show warnings but will still
+# trigger reloads when changed via imports. This is expected behavior.
+
+[install]
+# Install configuration
+
+[test]
+# Test configuration
+

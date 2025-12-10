@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, Pressable } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Pressable, Alert } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Play, Pause, X } from "lucide-react-native";
 import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
@@ -7,6 +7,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAppStore } from "@/state/appStore";
 import type { RootStackParamList } from "@/navigation/types";
+import { getGlobalAudioManager } from "@/utils/audioManager";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -18,6 +19,7 @@ const MiniPlayer = () => {
   const currentTime = useAppStore((s) => s.currentTime);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const setCurrentTime = useAppStore((s) => s.setCurrentTime);
+  const [isToggling, setIsToggling] = useState(false);
 
   if (!currentSession) return null;
 
@@ -32,8 +34,58 @@ const MiniPlayer = () => {
     ? (currentTime / currentSession.lengthSec) * 100
     : 0;
 
-  const handleTogglePlay = () => {
-    setIsPlaying(!isPlaying);
+  const handleTogglePlay = async () => {
+    if (isToggling) return; // Prevent double-clicks
+    
+    setIsToggling(true);
+    try {
+      const audioManager = getGlobalAudioManager();
+      
+      if (!audioManager) {
+        // If no audio manager is registered, navigate to PlaybackScreen
+        // which will set up the audio manager
+        navigation.navigate("Playback", { sessionId: currentSession.sessionId });
+        setIsToggling(false);
+        return;
+      }
+
+      if (isPlaying) {
+        await audioManager.pause();
+        setIsPlaying(false);
+      } else {
+        // Check if audio is ready
+        if (!audioManager.isReady()) {
+          Alert.alert(
+            "Audio Not Ready",
+            "Audio is still loading. Please wait a moment and try again.",
+            [{ text: "OK" }]
+          );
+          setIsToggling(false);
+          return;
+        }
+
+        try {
+          await audioManager.play();
+          setIsPlaying(true);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          Alert.alert(
+            "Playback Error",
+            `Could not start playback: ${errorMessage}`,
+            [{ text: "OK" }]
+          );
+        }
+      }
+    } catch (error) {
+      console.error("[MiniPlayer] Error toggling play:", error);
+      Alert.alert(
+        "Error",
+        "An error occurred while controlling playback.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setIsToggling(false);
+    }
   };
 
   const handleClose = () => {

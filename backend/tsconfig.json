@@ -29,5 +29,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "../shared/**/*.ts", "../shared/**/*.tsx"],
+  "exclude": ["node_modules", "generated"]
 }

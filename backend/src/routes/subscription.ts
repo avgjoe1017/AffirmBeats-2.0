@@ -12,6 +12,7 @@ import {
 } from "@/shared/contracts";
 import { checkAndResetIfNeeded } from "../utils/subscriptionReset";
 import { logger } from "../lib/logger";
+import { rateLimiters } from "../middleware/rateLimit";
 
 const subscription = new Hono<AppType>();
 
@@ -97,7 +98,7 @@ subscription.get("/", async (c) => {
 });
 
 // POST /api/subscription/upgrade - Upgrade to Pro
-subscription.post("/upgrade", zValidator("json", upgradeSubscriptionRequestSchema), async (c) => {
+subscription.post("/upgrade", rateLimiters.api, zValidator("json", upgradeSubscriptionRequestSchema), async (c) => {
   const session = c.get("session");
   if (!session) {
     return c.json({ success: false, message: "Authentication required" }, 401);
@@ -136,7 +137,7 @@ subscription.post("/upgrade", zValidator("json", upgradeSubscriptionRequestSchem
 });
 
 // POST /api/subscription/cancel - Cancel subscription
-subscription.post("/cancel", async (c) => {
+subscription.post("/cancel", rateLimiters.api, async (c) => {
   const session = c.get("session");
   if (!session) {
     return c.json({ success: false, message: "Authentication required" }, 401);
@@ -165,6 +166,7 @@ subscription.post("/cancel", async (c) => {
 // POST /api/subscription/verify-purchase - Verify IAP purchase and upgrade to Pro
 subscription.post(
   "/verify-purchase",
+  rateLimiters.api,
   zValidator("json", verifyPurchaseRequestSchema),
   async (c) => {
     const session = c.get("session");

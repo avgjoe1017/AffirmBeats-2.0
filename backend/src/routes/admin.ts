@@ -29,7 +29,6 @@ adminRouter.get("/dashboard", async (c) => {
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const startOfToday = new Date(now.setHours(0, 0, 0, 0));
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
 
     // Run independent queries in parallel to reduce connection overhead
     const [
@@ -104,7 +103,6 @@ adminRouter.get("/dashboard", async (c) => {
 
     // Get error breakdown by status code (from last 24h)
     const last24hErrors = metrics.getMetrics("api.error.count", last24Hours.getTime());
-    const last24hRequests = metrics.getMetrics("api.request.count", last24Hours.getTime());
     
     // Group errors by status code from tags
     const errorBreakdown: Record<string, number> = {
@@ -358,7 +356,7 @@ adminRouter.get("/dashboard", async (c) => {
     });
 
     // Alerts
-    const alerts: Array<{ type: "warning" | "info" | "success"; message: string }> = [];
+    const alerts: { type: "warning" | "info" | "success"; message: string }[] = [];
 
     // Critical: Error rate alert
     if (errorRate > 0.02) {
@@ -459,7 +457,6 @@ adminRouter.get("/dashboard", async (c) => {
     const [
       sessionsYesterday,
       costsYesterday,
-      revenueYesterday,
       activeUsersYesterday,
     ] = await Promise.all([
       db.affirmationSession.count({
@@ -473,7 +470,6 @@ adminRouter.get("/dashboard", async (c) => {
         },
         _sum: { apiCost: true },
       }),
-      Promise.resolve(revenueYesterdayAmount), // Already calculated
       db.user.count({
         where: {
           createdAt: { gte: yesterdayStart, lt: yesterdayEnd },
@@ -714,9 +710,6 @@ adminRouter.get("/export", zValidator("query", exportRequestSchema), async (c) =
       const users = await db.user.findMany({
         where: {
           createdAt: { gte: start, lte: end },
-        },
-        include: {
-          subscription: true,
         },
         select: {
           id: true,
@@ -1588,7 +1581,8 @@ adminRouter.patch("/config", zValidator("json", updateConfigSchema), async (c) =
   try {
     const { saveConfig } = await import("../lib/configStorage");
     const data = c.req.valid("json");
-    const updated = await saveConfig(data);
+    // Type assertion needed because saveConfig merges with defaults, ensuring all required fields are present
+    const updated = await saveConfig(data as Parameters<typeof saveConfig>[0]);
     logger.info("Config updated", { data });
     return c.json({ success: true, config: updated });
   } catch (error) {
@@ -1610,8 +1604,6 @@ adminRouter.post("/voice/test", zValidator("json", testVoiceSchema), async (c) =
   try {
     const { voice, text } = c.req.valid("json");
     
-    // Import TTS generation logic
-    const { generateTTS } = await import("../utils/ttsCache");
     const { env } = await import("../env");
     
     const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY;
@@ -1811,7 +1803,9 @@ adminRouter.post("/affirmations/bulk-regenerate-audio", zValidator("json", bulkR
       await deleteAllCache();
       logger.info("Invalidated TTS cache for bulk regenerate", { affirmationIds: ids });
     } catch (cacheError) {
-      logger.warn("Failed to invalidate cache, but continuing", cacheError);
+      logger.warn("Failed to invalidate cache, but continuing", {
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+      });
     }
 
     return c.json({ 
@@ -1904,9 +1898,6 @@ adminRouter.get("/logs", zValidator("query", getLogsSchema), async (c) => {
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
-        include: {
-          // Include user email if available
-        },
       }),
       db.generationLog.count({ where }),
     ]);

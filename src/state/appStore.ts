@@ -157,6 +157,13 @@ export const useAppStore = create<AppState>()(
         uniqueDaysUsed: state.uniqueDaysUsed,
         hasSeenDay3Banner: state.hasSeenDay3Banner,
       }),
+      // Migrate old "whisper" voice preference to "neutral"
+      migrate: (persistedState: any, version: number) => {
+        if (persistedState?.preferences?.voice === "whisper") {
+          persistedState.preferences.voice = "neutral";
+        }
+        return persistedState;
+      },
     }
   )
 );

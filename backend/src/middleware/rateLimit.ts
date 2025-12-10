@@ -99,7 +99,7 @@ export function rateLimit(options: {
 
     // Fallback to in-memory store if Redis is not available or failed
     if (!useRedis || !record) {
-      record = inMemoryStore[key];
+      record = inMemoryStore[key] ?? null;
       
       if (!record || record.resetAt <= now) {
         // Create new record or reset expired one

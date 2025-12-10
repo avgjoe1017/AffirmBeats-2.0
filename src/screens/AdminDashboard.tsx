@@ -94,7 +94,7 @@ export default function AdminDashboard() {
 
   const handleExport = async (type: "sessions" | "costs" | "users") => {
     try {
-      const url = `${process.env.EXPO_PUBLIC_VIBECODE_BACKEND_URL}/api/admin/export?type=${type}`;
+      const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/admin/export?type=${type}`;
       const canOpen = await Linking.canOpenURL(url);
       if (canOpen) {
         await Linking.openURL(url);

@@ -242,19 +242,11 @@ export function getLegacyBinauralBeatUrl(category: BinauralCategory, backendUrl:
 
 /**
  * Get URL for a binaural beat file (served from backend)
- * Prefers optimized files, falls back to legacy files
+ * Only uses optimized files - no legacy .wav files available
  */
 export function getBinauralBeatUrl(category: BinauralCategory, backendUrl: string, useOptimized: boolean = true): string {
-  if (useOptimized) {
-    try {
-      return getOptimizedBinauralBeatUrl(category, backendUrl);
-    } catch (error) {
-      // Fall back to legacy if optimized files are not available
-      console.warn(`Optimized binaural beat file not found for ${category}, falling back to legacy`);
-      return getLegacyBinauralBeatUrl(category, backendUrl);
-    }
-  }
-  return getLegacyBinauralBeatUrl(category, backendUrl);
+  // Always use optimized files - legacy .wav files are not available
+  return getOptimizedBinauralBeatUrl(category, backendUrl);
 }
 
 /**
@@ -290,7 +282,7 @@ export function getLegacyBackgroundSoundUrl(sound: BackgroundSound, backendUrl: 
 
 /**
  * Get URL for a background sound file (served from backend)
- * Prefers optimized files, falls back to legacy files
+ * Only uses optimized files - no legacy .mp3 files available
  * Filters out premium files if user doesn't have premium access
  */
 export function getBackgroundSoundUrl(
@@ -299,15 +291,7 @@ export function getBackgroundSoundUrl(
   useOptimized: boolean = true,
   hasPremiumAccess: boolean = false
 ): string | null {
-  if (useOptimized) {
-    try {
-      const url = getOptimizedBackgroundSoundUrl(sound, backendUrl, hasPremiumAccess);
-      if (url) return url;
-    } catch (error) {
-      // Fall back to legacy if optimized files are not available
-      console.warn(`Optimized background sound file not found for ${sound}, falling back to legacy`);
-    }
-  }
-  return getLegacyBackgroundSoundUrl(sound, backendUrl);
+  // Always use optimized files - legacy .mp3 files are not available
+  return getOptimizedBackgroundSoundUrl(sound, backendUrl, hasPremiumAccess);
 }
 

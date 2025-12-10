@@ -63,7 +63,7 @@ After running `bunx expo start` or `npx expo start`, you'll see:
 
 ### Backend connection errors
 - Verify backend is running on `http://localhost:3000`
-- Check `EXPO_PUBLIC_VIBECODE_BACKEND_URL` in root `.env` file
+- Check `EXPO_PUBLIC_BACKEND_URL` in root `.env` file
 
 ## Quick Start Command
 

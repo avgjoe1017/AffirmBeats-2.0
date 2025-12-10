@@ -100,7 +100,14 @@ export default function SubscriptionScreen() {
         [
           {
             text: "OK",
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              // Check if we can go back, otherwise navigate to home
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.replace("Tabs", { screen: "HomeTab" });
+              }
+            },
           },
         ]
       );
@@ -163,7 +170,17 @@ export default function SubscriptionScreen() {
       {/* Header */}
       <View className="pt-14 px-6 pb-4 flex-row items-center justify-between">
         <View className="flex-1" />
-        <Pressable onPress={() => navigation.goBack()} className="p-2 -mr-2">
+        <Pressable 
+          onPress={() => {
+            // Check if we can go back, otherwise navigate to home
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.replace("Tabs", { screen: "HomeTab" });
+            }
+          }} 
+          className="p-2 -mr-2"
+        >
           <X size={24} color="#F0F0F5" />
         </Pressable>
       </View>

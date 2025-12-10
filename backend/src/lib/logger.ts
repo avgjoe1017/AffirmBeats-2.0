@@ -61,13 +61,17 @@ class Logger {
       // Send to Sentry if available (async, don't block)
       if (error instanceof Error) {
         import("./sentry").then(({ captureException }) => {
-          captureException(error, context);
+          captureException(error, context).catch(() => {
+            // Sentry not available, ignore
+          });
         }).catch(() => {
           // Sentry not available, ignore
         });
       } else {
         import("./sentry").then(({ captureMessage }) => {
-          captureMessage(message, "error", errorContext);
+          captureMessage(message, "error", errorContext).catch(() => {
+            // Sentry not available, ignore
+          });
         }).catch(() => {
           // Sentry not available, ignore
         });

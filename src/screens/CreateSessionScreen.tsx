@@ -183,7 +183,12 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
           }
         }
 
-        navigation.goBack();
+        // Check if we can go back, otherwise navigate to home
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.replace("Tabs", { screen: "HomeTab" });
+        }
         return;
       }
 
@@ -249,7 +254,17 @@ const CreateSessionScreen = ({ navigation, route }: Props) => {
     <LinearGradient colors={["#0F0F1E", "#1A1A2E"]} style={{ flex: 1 }}>
       {/* Header */}
       <View className="pt-14 px-6 pb-4 flex-row items-center justify-between">
-        <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
+        <Pressable 
+          onPress={() => {
+            // Check if we can go back, otherwise navigate to home
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.replace("Tabs", { screen: "HomeTab" });
+            }
+          }} 
+          className="p-2 -ml-2"
+        >
           <ArrowLeft size={24} color="#F0F0F5" />
         </Pressable>
         <Text className="text-white text-xl font-bold">

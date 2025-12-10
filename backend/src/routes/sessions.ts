@@ -167,6 +167,25 @@ const FALLBACK_AFFIRMATIONS = {
 };
 
 // Default sessions for all users (especially guests)
+/**
+ * Seed default sessions into the database
+ * Called on server startup to ensure default sessions are available
+ * 
+ * Note: Default sessions are NOT seeded into the database because:
+ * 1. The schema requires userId (non-nullable with required relation)
+ * 2. Making userId optional would require a migration
+ * 3. Default sessions are served directly from DEFAULT_SESSIONS array for guest users
+ * 4. For the playlist endpoint, we need to handle default sessions specially
+ * 
+ * Instead, the playlist endpoint should check if sessionId starts with "default-"
+ * and generate TTS on-the-fly or return an empty playlist.
+ */
+export async function seedDefaultSessions() {
+  logger.info("Default sessions are served from memory (not seeded to database)");
+  // Default sessions are returned directly from DEFAULT_SESSIONS array
+  // No database seeding needed
+}
+
 export const DEFAULT_SESSIONS = [
   {
     id: "default-sleep-1",
@@ -630,7 +649,7 @@ async function processSessionAffirmations(
   voiceType: string,
   pace: "slow" | "normal",
   sessionId: string,
-  silenceBetweenMs: number = 5000
+  silenceBetweenMs: number = 8000 // Default 8 seconds (8000ms) to match default affirmationSpacing
 ): Promise<string[]> {
   const processedAffirmationIds: string[] = [];
 
@@ -725,6 +744,7 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
   let voice = "neutral";
   let pace = "normal";
   let noise = "rain";
+  let affirmationSpacing = 8; // Default 8 seconds
 
   // If user is authenticated, get their preferences (with caching)
   if (user) {
@@ -742,7 +762,30 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
       voice = preferences.voice;
       pace = preferences.pace;
       noise = preferences.noise;
+      affirmationSpacing = preferences.affirmationSpacing || 8; // Default to 8 if not set
     }
+  }
+
+  // Normalize voice to supported set (handle legacy "whisper" value)
+  const allowedVoices = [
+    "neutral",
+    "confident",
+    "premium1",
+    "premium2",
+    "premium3",
+    "premium4",
+    "premium5",
+    "premium6",
+    "premium7",
+    "premium8",
+  ];
+
+  if (!allowedVoices.includes(voice)) {
+    logger.warn("Unsupported voice in preferences, falling back to neutral", {
+      userId: user?.id,
+      voice,
+    });
+    voice = "neutral";
   }
 
   // Check if this is user's first session
@@ -786,8 +829,8 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
   };
   const title = `${goalTitles[goal]} — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
-  // Calculate silence duration (default 5 seconds, can be customized per goal)
-  const silenceBetweenMs = 5000; // 5 seconds default
+  // Calculate silence duration from user preference (convert seconds to milliseconds)
+  const silenceBetweenMs = affirmationSpacing * 1000; // Convert seconds to milliseconds
 
   // Generate a temporary session ID for guest users
   const sessionId = user
@@ -871,7 +914,7 @@ sessionsRouter.post("/generate", rateLimiters.openai, zValidator("json", generat
 // ============================================
 // POST /api/sessions/create - Create custom session
 // ============================================
-sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSchema), async (c) => {
+sessionsRouter.post("/create", rateLimiters.api, zValidator("json", createCustomSessionRequestSchema), async (c) => {
   const user = c.get("user");
 
   const { title, binauralCategory, binauralHz, affirmations, goal: providedGoal } = c.req.valid("json");
@@ -948,6 +991,7 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
   let voice = "neutral";
   let pace = "normal";
   let noise = "rain";
+  let affirmationSpacing = 8; // Default 8 seconds
 
   // If user is authenticated, get their preferences (with caching)
   if (user) {
@@ -965,13 +1009,39 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
       voice = preferences.voice;
       pace = preferences.pace;
       noise = preferences.noise;
+      affirmationSpacing = preferences.affirmationSpacing || 8; // Default to 8 if not set
     }
+  }
+
+  // Normalize voice to supported set (handle legacy "whisper" value)
+  const allowedVoices = [
+    "neutral",
+    "confident",
+    "premium1",
+    "premium2",
+    "premium3",
+    "premium4",
+    "premium5",
+    "premium6",
+    "premium7",
+    "premium8",
+  ];
+
+  if (!allowedVoices.includes(voice)) {
+    logger.warn("Unsupported voice in preferences, falling back to neutral", {
+      userId: user?.id,
+      voice,
+    });
+    voice = "neutral";
   }
 
   // Calculate session length based on pace and number of affirmations
   const baseLengthPerAffirmation = 30; // 30 seconds per affirmation
   const lengthMultiplier = pace === "slow" ? 1.3 : 1.0;
   const lengthSec = Math.round(affirmations.length * baseLengthPerAffirmation * lengthMultiplier);
+
+  // Calculate silence duration from user preference (convert seconds to milliseconds)
+  const silenceBetweenMs = affirmationSpacing * 1000; // Convert seconds to milliseconds
 
   // Generate a temporary session ID for guest users, or save to DB for authenticated users
   let sessionId: string;
@@ -989,6 +1059,7 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
           pace,
           noise,
           lengthSec,
+          silenceBetweenMs,
           isFavorite: false,
           binauralCategory,
           binauralHz,
@@ -1005,7 +1076,7 @@ sessionsRouter.post("/create", zValidator("json", createCustomSessionRequestSche
           voice,
           pace as "slow" | "normal",
           sessionId,
-          5000 // Default silence between affirmations
+          silenceBetweenMs
         );
         logger.info("Processed individual affirmations for custom session", { sessionId, affirmationsCount: affirmations.length });
       } catch (error) {
@@ -1124,7 +1195,36 @@ sessionsRouter.get("/:id/playlist", async (c) => {
 
   logger.info("Fetching session playlist", { sessionId, userId: user?.id || "guest" });
 
-  // Get session
+  // Check if this is a default session (not in database)
+  const isDefaultSession = sessionId.startsWith("default-");
+  
+  if (isDefaultSession) {
+    // Default sessions are not in the database - they're served from DEFAULT_SESSIONS array
+    // For now, return empty playlist (client will fall back to legacy TTS system)
+    logger.info("Default session requested - returning empty playlist (will use legacy TTS)", { sessionId });
+    
+    // Find the default session in the DEFAULT_SESSIONS array
+    const defaultSession = DEFAULT_SESSIONS.find(s => s.id === sessionId);
+    if (!defaultSession) {
+      return c.json({
+        error: "NOT_FOUND",
+        code: "NOT_FOUND",
+        message: "Default session not found.",
+      }, 404);
+    }
+    
+    return c.json({
+      sessionId: sessionId,
+      totalDurationMs: 0,
+      silenceBetweenMs: 8000, // Default spacing
+      affirmations: [],
+      binauralCategory: defaultSession.binauralCategory || undefined,
+      binauralHz: defaultSession.binauralHz || undefined,
+      backgroundNoise: defaultSession.noise || undefined,
+    });
+  }
+
+  // Get session from database (for user sessions)
   const session = await db.affirmationSession.findUnique({
     where: { id: sessionId },
     include: {
@@ -1141,7 +1241,7 @@ sessionsRouter.get("/:id/playlist", async (c) => {
     return c.json({
       error: "NOT_FOUND",
       code: "NOT_FOUND",
-      message: "Session not found.",
+      message: "Session not found or not processed yet",
     }, 404);
   }
 
@@ -1169,10 +1269,15 @@ sessionsRouter.get("/:id/playlist", async (c) => {
     });
   }
 
-  // Get user preferences for voice selection (pace is always slow)
+  // For default sessions, use the session's voiceId directly
+  // For user sessions, use user preferences
   let preferredVoice: string = "neutral";
   
-  if (user) {
+  if (isDefaultSession) {
+    // Default sessions use their own voiceId
+    preferredVoice = session.voiceId || "neutral";
+  } else if (user) {
+    // User sessions use user preferences
     const preferences = await db.userPreferences.findUnique({
       where: { userId: user.id },
     });
@@ -1182,8 +1287,12 @@ sessionsRouter.get("/:id/playlist", async (c) => {
   }
 
   // Check if user has premium access
+  // Default sessions always have access to premium voices
   let hasPremiumAccess = false;
-  if (user) {
+  if (isDefaultSession) {
+    // Default sessions always have access to premium voices
+    hasPremiumAccess = true;
+  } else if (user) {
     const subscription = await db.userSubscription.findUnique({
       where: { userId: user.id },
     });
@@ -1201,61 +1310,71 @@ sessionsRouter.get("/:id/playlist", async (c) => {
     preferredVoice = "neutral";
   }
 
-  // Build playlist with appropriate voice versions (pace is always slow)
-  const affirmations = await Promise.all(
-    session.sessionAffirmations.map(async (sa) => {
-      // Try to find the preferred audio version (always slow pace)
-      let audioVersion = await db.affirmationAudio.findUnique({
-        where: {
-          affirmationId_voiceId: {
-            affirmationId: sa.affirmationId,
-            voiceId: preferredVoice,
-          },
-        },
-      });
+  // OPTIMIZATION: Batch load all audio versions in a single query instead of N queries
+  // This eliminates the N+1 query problem (30 queries → 1 query for 10 affirmations)
+  const affirmationIds = session.sessionAffirmations.map(sa => sa.affirmationId);
+  
+  // Load all audio versions for all affirmations in one query
+  const allAudioVersions = await db.affirmationAudio.findMany({
+    where: {
+      affirmationId: { in: affirmationIds },
+    },
+    orderBy: {
+      createdAt: "desc" as const,
+    },
+  });
 
-      // If still not found, try any allowed voice
-      if (!audioVersion) {
-        audioVersion = await db.affirmationAudio.findFirst({
-          where: {
-            affirmationId: sa.affirmationId,
-            voiceId: { in: allowedVoices },
-          },
-          orderBy: { createdAt: "desc" },
-        });
+  // Create lookup maps for O(1) access
+  // Map: affirmationId -> Map: voiceId -> audioVersion
+  const audioVersionMap = new Map<string, Map<string, typeof allAudioVersions[0]>>();
+  for (const audioVersion of allAudioVersions) {
+    if (!audioVersionMap.has(audioVersion.affirmationId)) {
+      audioVersionMap.set(audioVersion.affirmationId, new Map());
+    }
+    audioVersionMap.get(audioVersion.affirmationId)!.set(audioVersion.voiceId, audioVersion);
+  }
+
+  // Build playlist by matching audio versions in memory (O(N) instead of O(N²))
+  const affirmations = session.sessionAffirmations.map((sa) => {
+    const affirmationAudioMap = audioVersionMap.get(sa.affirmationId);
+    
+    // Try to find the preferred audio version first
+    let audioVersion = affirmationAudioMap?.get(preferredVoice);
+    
+    // If not found, try any allowed voice
+    if (!audioVersion && affirmationAudioMap) {
+      for (const voiceId of allowedVoices) {
+        audioVersion = affirmationAudioMap.get(voiceId);
+        if (audioVersion) break;
       }
+    }
+    
+    // If still not found, try any voice (for admin/testing)
+    if (!audioVersion && affirmationAudioMap) {
+      // Get first available voice version
+      audioVersion = Array.from(affirmationAudioMap.values())[0];
+    }
 
-      // If still not found, try any voice (for admin/testing)
-      if (!audioVersion) {
-        audioVersion = await db.affirmationAudio.findFirst({
-          where: {
-            affirmationId: sa.affirmationId,
-          },
-          orderBy: { createdAt: "desc" },
-        });
-      }
+    // Fall back to legacy fields if no audio version exists
+    const audioUrl = audioVersion
+      ? `${baseUrl}${audioVersion.audioUrl}`
+      : sa.affirmation.ttsAudioUrl
+      ? `${baseUrl}${sa.affirmation.ttsAudioUrl}`
+      : null;
 
-      // Fall back to legacy fields if no audio version exists
-      const audioUrl = audioVersion
-        ? `${baseUrl}${audioVersion.audioUrl}`
-        : sa.affirmation.ttsAudioUrl
-        ? `${baseUrl}${sa.affirmation.ttsAudioUrl}`
-        : null;
+    const durationMs = audioVersion
+      ? audioVersion.durationMs
+      : sa.affirmation.audioDurationMs || 0;
 
-      const durationMs = audioVersion
-        ? audioVersion.durationMs
-        : sa.affirmation.audioDurationMs || 0;
-
-      return {
-        id: sa.affirmationId,
-        text: sa.affirmation.text,
-        audioUrl,
-        durationMs,
-        silenceAfterMs: sa.silenceAfterMs,
-        voiceId: audioVersion?.voiceId || sa.affirmation.ttsVoiceId || null,
-      };
-    })
-  );
+    return {
+      id: sa.affirmationId,
+      text: sa.affirmation.text,
+      audioUrl,
+      durationMs,
+      silenceAfterMs: sa.silenceAfterMs,
+      voiceId: audioVersion?.voiceId || sa.affirmation.ttsVoiceId || null,
+    };
+  });
 
   // Calculate total duration
   const totalDurationMs = affirmations.reduce((sum, aff) => {
@@ -1276,7 +1395,7 @@ sessionsRouter.get("/:id/playlist", async (c) => {
 // ============================================
 // PATCH /api/sessions/:id/favorite - Toggle favorite
 // ============================================
-sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSchema), async (c) => {
+sessionsRouter.patch("/:id/favorite", rateLimiters.api, zValidator("json", toggleFavoriteRequestSchema), async (c) => {
   const user = c.get("user");
 
   if (!user) {
@@ -1329,7 +1448,7 @@ sessionsRouter.patch("/:id/favorite", zValidator("json", toggleFavoriteRequestSc
 // ============================================
 // DELETE /api/sessions/:id - Delete session
 // ============================================
-sessionsRouter.delete("/:id", async (c) => {
+sessionsRouter.delete("/:id", rateLimiters.api, async (c) => {
   const user = c.get("user");
 
   if (!user) {
@@ -1377,7 +1496,7 @@ sessionsRouter.delete("/:id", async (c) => {
 // ============================================
 // PATCH /api/sessions/:id - Update session
 // ============================================
-sessionsRouter.patch("/:id", zValidator("json", updateSessionRequestSchema), async (c) => {
+sessionsRouter.patch("/:id", rateLimiters.api, zValidator("json", updateSessionRequestSchema), async (c) => {
   const user = c.get("user");
 
   if (!user) {

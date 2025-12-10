@@ -4,12 +4,12 @@ import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 
 export const authClient = createAuthClient({
-  baseURL: process.env.EXPO_PUBLIC_VIBECODE_BACKEND_URL as string,
+  baseURL: process.env.EXPO_PUBLIC_BACKEND_URL as string,
   plugins: [
     emailOTPClient(),
     expoClient({
       scheme: "recenter",
-      storagePrefix: process.env.EXPO_PUBLIC_VIBECODE_PROJECT_ID as string,
+      storagePrefix: process.env.EXPO_PUBLIC_PROJECT_ID as string || "recenter",
       storage: SecureStore,
     }),
   ],

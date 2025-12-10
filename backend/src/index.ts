@@ -9,7 +9,7 @@ import { env } from "./env";
 import { uploadRouter } from "./routes/upload";
 import { sampleRouter } from "./routes/sample";
 import { preferencesRouter } from "./routes/preferences";
-import { sessionsRouter } from "./routes/sessions";
+import { sessionsRouter, seedDefaultSessions } from "./routes/sessions";
 import { ttsRouter } from "./routes/tts";
 import { subscription } from "./routes/subscription";
 import { audioRouter } from "./routes/audio";
@@ -59,7 +59,14 @@ if (env.NODE_ENV === "production" || env.NODE_ENV === "staging") {
 
 logger.info("Initializing Hono application");
 app.use("*", honoLogger());
-app.use("/*", cors());
+// CORS configuration - allow all origins for development, including network IPs
+app.use("/*", cors({
+  origin: "*", // Allow all origins (for development)
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
+  exposeHeaders: ["Content-Type"],
+  credentials: true,
+}));
 
 // Request logger middleware (before routes for timing)
 app.use("*", requestLogger);
@@ -321,14 +328,63 @@ app.post("/api/admin/reset-subscriptions", async (c) => {
 });
 
 // Start the server (skip when running tests)
-if (env.NODE_ENV !== "test" && !process.env.VITEST) {
+if (!process.env.VITEST) {
   logger.info("Starting server", { port: env.PORT, environment: env.NODE_ENV });
-  serve({ fetch: app.fetch, port: Number(env.PORT) }, () => {
-    logger.info("Server started successfully", {
-      port: env.PORT,
-      environment: env.NODE_ENV,
-      baseUrl: `http://localhost:${env.PORT}`,
+  
+  // Use Bun's native server for better network binding support
+  // This ensures the server is accessible on all network interfaces (0.0.0.0)
+  const port = Number(env.PORT);
+  
+  // Check if we're running in Bun (which has better network binding)
+  if (typeof Bun !== "undefined") {
+    // Use Bun.serve for native network binding
+    Bun.serve({
+      fetch: app.fetch,
+      port: port,
+      hostname: "0.0.0.0", // Listen on all network interfaces
     });
+    
+    // Get network IP addresses for logging (async, fire-and-forget)
+    (async () => {
+      try {
+        const os = await import("os");
+        const networkInterfaces = os.networkInterfaces();
+        const networkIPs: string[] = [];
+        for (const interfaceName of Object.keys(networkInterfaces)) {
+          const addresses = networkInterfaces[interfaceName];
+          if (addresses) {
+            for (const addr of addresses) {
+              if (addr.family === "IPv4" && !addr.internal) {
+                networkIPs.push(addr.address);
+              }
+            }
+          }
+        }
+        
+        logger.info("Server started successfully (Bun native)", {
+          port: env.PORT,
+          environment: env.NODE_ENV,
+          localhost: `http://localhost:${env.PORT}`,
+          networkIPs: networkIPs.map(ip => `http://${ip}:${env.PORT}`),
+          networkAccessible: true,
+          hostname: "0.0.0.0",
+        });
+        
+        // Seed default sessions after server starts
+        await seedDefaultSessions();
+      } catch {
+        logger.info("Server started successfully (Bun native)", {
+          port: env.PORT,
+          environment: env.NODE_ENV,
+          localhost: `http://localhost:${env.PORT}`,
+          networkAccessible: true,
+          hostname: "0.0.0.0",
+        });
+        
+        // Seed default sessions after server starts
+        await seedDefaultSessions();
+      }
+    })();
     
     // Log available endpoints in development
     if (env.NODE_ENV === "development") {
@@ -344,5 +400,35 @@ if (env.NODE_ENV !== "test" && !process.env.VITEST) {
         admin: "POST /api/admin/reset-subscriptions",
       });
     }
-  });
+  } else {
+    // Fallback to @hono/node-server for Node.js
+    serve({ 
+      fetch: app.fetch, 
+      port: port,
+      // @hono/node-server may not support hostname, but try it
+      ...(typeof (serve as any).hostname !== "undefined" ? { hostname: "0.0.0.0" } : {}),
+    }, () => {
+      logger.info("Server started successfully (Node.js)", {
+        port: env.PORT,
+        environment: env.NODE_ENV,
+        baseUrl: `http://localhost:${env.PORT}`,
+        networkAccessible: true,
+      });
+      
+      // Log available endpoints in development
+      if (env.NODE_ENV === "development") {
+        logger.debug("Available endpoints", {
+          auth: "/api/auth/*",
+          upload: "POST /api/upload/image",
+          sample: "GET/POST /api/sample",
+          preferences: "GET/PATCH /api/preferences",
+          sessions: "GET/POST /api/sessions",
+          tts: "POST /api/tts/generate",
+          subscription: "GET/POST /api/subscription",
+          health: "GET /health",
+          admin: "POST /api/admin/reset-subscriptions",
+        });
+      }
+    });
+  }
 }

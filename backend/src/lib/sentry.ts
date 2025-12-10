@@ -20,8 +20,12 @@ export async function initSentry() {
   }
 
   try {
-    // Dynamically import @sentry/node (only if Sentry is configured)
-    const Sentry = (await import("@sentry/node")).default;
+    // Use @sentry/bun which is specifically designed for Bun runtime (no OpenTelemetry issues)
+    const Sentry = await import("@sentry/bun");
+    
+    if (!Sentry || !Sentry.init) {
+      throw new Error(`Sentry module not loaded correctly. Available keys: ${Object.keys(Sentry || {}).join(", ")}`);
+    }
     
     Sentry.init({
       dsn: env.SENTRY_DSN,
@@ -63,17 +67,19 @@ export async function initSentry() {
 /**
  * Capture exception
  */
-export function captureException(error: Error, context?: Record<string, unknown>): void {
+export async function captureException(error: Error, context?: Record<string, unknown>): Promise<void> {
   if (!sentryInitialized) {
     return;
   }
 
   try {
-    const Sentry = require("@sentry/node").default;
-    Sentry.captureException(error, {
-      tags: context,
-      extra: context,
-    });
+    const Sentry = await import("@sentry/bun");
+    if (Sentry && Sentry.captureException) {
+      Sentry.captureException(error, {
+        tags: context,
+        extra: context,
+      });
+    }
   } catch (err) {
     logger.error("Failed to capture exception", err);
   }
@@ -82,18 +88,20 @@ export function captureException(error: Error, context?: Record<string, unknown>
 /**
  * Capture message
  */
-export function captureMessage(message: string, level: "info" | "warning" | "error" = "error", context?: Record<string, unknown>): void {
+export async function captureMessage(message: string, level: "info" | "warning" | "error" = "error", context?: Record<string, unknown>): Promise<void> {
   if (!sentryInitialized) {
     return;
   }
 
   try {
-    const Sentry = require("@sentry/node").default;
-    Sentry.captureMessage(message, {
-      level,
-      tags: context,
-      extra: context,
-    });
+    const Sentry = await import("@sentry/bun");
+    if (Sentry && Sentry.captureMessage) {
+      Sentry.captureMessage(message, {
+        level,
+        tags: context,
+        extra: context,
+      });
+    }
   } catch (err) {
     logger.error("Failed to capture message", err);
   }
@@ -102,14 +110,16 @@ export function captureMessage(message: string, level: "info" | "warning" | "err
 /**
  * Set user context
  */
-export function setUser(user: { id: string; email?: string; username?: string }): void {
+export async function setUser(user: { id: string; email?: string; username?: string }): Promise<void> {
   if (!sentryInitialized) {
     return;
   }
 
   try {
-    const Sentry = require("@sentry/node").default;
-    Sentry.setUser(user);
+    const Sentry = await import("@sentry/bun");
+    if (Sentry && Sentry.setUser) {
+      Sentry.setUser(user);
+    }
   } catch (err) {
     logger.error("Failed to set user context", err);
   }
@@ -118,34 +128,30 @@ export function setUser(user: { id: string; email?: string; username?: string })
 /**
  * Add breadcrumb
  */
-export function addBreadcrumb(breadcrumb: {
+export async function addBreadcrumb(breadcrumb: {
   category: string;
   message: string;
   level?: "info" | "warning" | "error";
   data?: Record<string, unknown>;
-}): void {
+}): Promise<void> {
   if (!sentryInitialized) {
     return;
   }
 
   try {
-    const Sentry = require("@sentry/node").default;
-    Sentry.addBreadcrumb({
-      category: breadcrumb.category,
-      message: breadcrumb.message,
-      level: breadcrumb.level || "info",
-      data: breadcrumb.data,
-    });
+    const Sentry = await import("@sentry/bun");
+    if (Sentry && Sentry.addBreadcrumb) {
+      Sentry.addBreadcrumb({
+        category: breadcrumb.category,
+        message: breadcrumb.message,
+        level: breadcrumb.level || "info",
+        data: breadcrumb.data,
+      });
+    }
   } catch (err) {
     logger.error("Failed to add breadcrumb", err);
   }
 }
 
-/**
- * Initialize Sentry on module load
- */
-if (env.SENTRY_DSN) {
-  initSentry().catch((error) => {
-    logger.error("Failed to initialize Sentry", error);
-  });
-}
+// Note: Sentry initialization is called from src/index.ts
+// to ensure proper initialization order

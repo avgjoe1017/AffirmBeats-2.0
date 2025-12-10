@@ -148,7 +148,14 @@ const GenerationScreen = ({ navigation, route }: Props) => {
     <LinearGradient colors={goalColors[goal]} style={{ flex: 1 }}>
       <View className="flex-1 justify-center items-center px-8">
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            // Check if we can go back, otherwise navigate to home
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.replace("Tabs", { screen: "HomeTab" });
+            }
+          }}
           className="absolute top-16 right-6 z-10"
         >
           <X size={32} color="#FFF" />

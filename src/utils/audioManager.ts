@@ -6,11 +6,12 @@
  * 2. Binaural Beats (local audio files)
  * 3. Background Noise (local audio files)
  * 
- * Uses expo-av for audio playback (compatible with current setup)
+ * NOTE: Uses expo-av for audio playback (deprecated in SDK 54, will migrate to expo-audio in future)
+ * This is a known deprecation warning but expo-av still works fine for now.
  */
 
 import { Audio } from "expo-av";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import * as FileSystemLegacy from "expo-file-system/legacy";
 import { BACKEND_URL } from "@/lib/api";
 
@@ -23,6 +24,29 @@ export interface AudioManagerState {
   duration: number;
 }
 
+// Global audio manager instance registry
+// This allows MiniPlayer and other components to control audio playback
+type AudioManagerControls = {
+  play: () => Promise<void>;
+  pause: () => Promise<void>;
+  seek: (time: number) => Promise<void>;
+  isReady: () => boolean;
+};
+
+let globalAudioManager: AudioManagerControls | null = null;
+
+export function registerGlobalAudioManager(controls: AudioManagerControls) {
+  globalAudioManager = controls;
+}
+
+export function unregisterGlobalAudioManager() {
+  globalAudioManager = null;
+}
+
+export function getGlobalAudioManager(): AudioManagerControls | null {
+  return globalAudioManager;
+}
+
 /**
  * Audio Manager Hook
  * Manages multi-track audio playback with independent volume control
@@ -31,6 +55,17 @@ export function useAudioManager() {
   const [affirmationsSound, setAffirmationsSound] = useState<Audio.Sound | null>(null);
   const [binauralSound, setBinauralSound] = useState<Audio.Sound | null>(null);
   const [backgroundSound, setBackgroundSound] = useState<Audio.Sound | null>(null);
+
+  // Refs to access current sounds in cleanup/callbacks without dependencies
+  // This ensures cleanup always works even if closures are stale
+  const affirmationsSoundRef = useRef<Audio.Sound | null>(null);
+  const binauralSoundRef = useRef<Audio.Sound | null>(null);
+  const backgroundSoundRef = useRef<Audio.Sound | null>(null);
+
+  // Sync refs with state
+  useEffect(() => { affirmationsSoundRef.current = affirmationsSound; }, [affirmationsSound]);
+  useEffect(() => { binauralSoundRef.current = binauralSound; }, [binauralSound]);
+  useEffect(() => { backgroundSoundRef.current = backgroundSound; }, [backgroundSound]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -69,8 +104,9 @@ export function useAudioManager() {
         setAffirmationsSound(null);
       }
 
-      // Skip playlist fetch for temp sessions (they don't exist in backend)
-      if (sessionId.startsWith("temp-") || sessionId.startsWith("default-")) {
+      // Skip playlist fetch only for temp sessions (guest sessions that aren't saved)
+      // Default sessions are saved in the database and can be loaded
+      if (sessionId.startsWith("temp-")) {
         throw new Error("Session not saved - cannot load playlist");
       }
 
@@ -97,14 +133,17 @@ export function useAudioManager() {
       setDuration(playlistData.totalDurationMs / 1000);
       setCurrentAffirmationIndex(0);
 
-      // Optimized preloading strategy:
-      // 1. Load first 3 affirmations immediately (priority for smooth start)
-      // 2. Load rest in background batches
-      const PRIORITY_COUNT = 3;
-      const BATCH_SIZE = 5;
+      // OPTIMIZATION: Load all affirmations in parallel for maximum speed
+      // Previous strategy loaded first 3, then batches of 5 sequentially
+      // New strategy: Load all in parallel (or larger batches if needed for memory)
+      const MAX_PARALLEL = 15; // Load up to 15 in parallel to avoid overwhelming network
       
-      const priorityAffirmations = playlistData.affirmations.slice(0, PRIORITY_COUNT);
-      const remainingAffirmations = playlistData.affirmations.slice(PRIORITY_COUNT);
+      const allAffirmations = playlistData.affirmations;
+      const priorityAffirmations = allAffirmations.slice(0, 3); // First 3 are priority
+      const remainingAffirmations = allAffirmations.slice(3);
+
+      // Wait for priority affirmations to be fully loaded before considering audio "ready"
+      // This prevents race conditions where play() is called before audio is ready
 
       // Helper function to load a single affirmation
       const loadAffirmation = async (aff: {
@@ -136,26 +175,27 @@ export function useAudioManager() {
         return false;
       };
 
-      // Load priority affirmations first (parallel)
+      // Load priority affirmations first (parallel) and wait for completion
+      // This ensures audio is ready before play() can be called
       const priorityPromises = priorityAffirmations.map(aff => loadAffirmation(aff));
       const priorityResults = await Promise.allSettled(priorityPromises);
       const prioritySuccessCount = priorityResults.filter(r => r.status === 'fulfilled' && r.value).length;
-      console.log(`[AudioManager] Loaded ${prioritySuccessCount}/${PRIORITY_COUNT} priority affirmations`);
+      console.log(`[AudioManager] Loaded ${prioritySuccessCount}/${priorityAffirmations.length} priority affirmations`);
+      
+      // Verify at least the first affirmation is loaded (required for playback)
+      if (prioritySuccessCount === 0 && priorityAffirmations.length > 0) {
+        throw new Error("Failed to load any priority affirmations. Audio playback will not work.");
+      }
 
-      // Load remaining affirmations in batches (non-blocking)
-      // Process batches sequentially to avoid overwhelming the network
+      // OPTIMIZATION: Load remaining affirmations in larger parallel batches
+      // Instead of batches of 5 sequentially, load up to MAX_PARALLEL in parallel
       const loadRemainingInBatches = async () => {
-        for (let i = 0; i < remainingAffirmations.length; i += BATCH_SIZE) {
-          const batch = remainingAffirmations.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < remainingAffirmations.length; i += MAX_PARALLEL) {
+          const batch = remainingAffirmations.slice(i, i + MAX_PARALLEL);
           const batchPromises = batch.map(aff => loadAffirmation(aff));
           const batchResults = await Promise.allSettled(batchPromises);
           const batchSuccessCount = batchResults.filter(r => r.status === 'fulfilled' && r.value).length;
-          console.log(`[AudioManager] Loaded batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchSuccessCount}/${batch.length} affirmations`);
-          
-          // Small delay between batches to avoid overwhelming the system
-          if (i + BATCH_SIZE < remainingAffirmations.length) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
+          console.log(`[AudioManager] Loaded batch ${Math.floor(i / MAX_PARALLEL) + 1}: ${batchSuccessCount}/${batch.length} affirmations`);
         }
       };
 
@@ -188,6 +228,10 @@ export function useAudioManager() {
         await affirmationsSound.unloadAsync();
       }
 
+      // Normalize voice to supported set (handle legacy "whisper" value)
+      const normalizedVoiceType: "neutral" | "confident" | "premium1" | "premium2" | "premium3" | "premium4" | "premium5" | "premium6" | "premium7" | "premium8" =
+        (voiceType === "whisper" ? "neutral" : voiceType) as "neutral" | "confident" | "premium1" | "premium2" | "premium3" | "premium4" | "premium5" | "premium6" | "premium7" | "premium8";
+
       const response = await fetch(`${BACKEND_URL}/api/tts/generate-session`, {
         method: "POST",
         headers: {
@@ -195,7 +239,7 @@ export function useAudioManager() {
         },
         body: JSON.stringify({
           affirmations,
-          voiceType,
+          voiceType: normalizedVoiceType,
           pace,
           affirmationSpacing,
           goal, // Include goal for goal-based voice configuration
@@ -282,15 +326,24 @@ export function useAudioManager() {
         await binauralSound.unloadAsync();
       }
 
+      console.log("[AudioManager] Loading binaural beats from:", fileUri);
       const { sound } = await Audio.Sound.createAsync(
         { uri: fileUri },
         { shouldPlay: false, isLooping: true, volume: 0 } // Start at volume 0 for fade-in
       );
 
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded) {
+        console.log("[AudioManager] Binaural beats loaded successfully", {
+          duration: status.durationMillis ? `${(status.durationMillis / 1000).toFixed(1)}s` : "unknown"
+        });
+      }
+
       setBinauralSound(sound);
       return sound;
     } catch (error) {
-      console.error("[AudioManager] Failed to load binaural beats:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("[AudioManager] Failed to load binaural beats:", errorMessage, { fileUri });
       throw error;
     }
   };
@@ -313,10 +366,18 @@ export function useAudioManager() {
         await backgroundSound.unloadAsync();
       }
 
+      console.log("[AudioManager] Loading background noise from:", fileUri);
       const { sound } = await Audio.Sound.createAsync(
         { uri: fileUri },
         { shouldPlay: false, isLooping: true, volume: 0 } // Start at volume 0 for fade-in
       );
+
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded) {
+        console.log("[AudioManager] Background noise loaded successfully", {
+          duration: status.durationMillis ? `${(status.durationMillis / 1000).toFixed(1)}s` : "unknown"
+        });
+      }
 
       setBackgroundSound(sound);
       return sound;
@@ -326,11 +387,13 @@ export function useAudioManager() {
       const isNetworkError = errorMessage.includes("NSURLErrorDomain") || 
                             errorMessage.includes("Network request failed") ||
                             errorMessage.includes("timeout") ||
-                            errorMessage.includes("-1008");
+                            errorMessage.includes("-1008") ||
+                            errorMessage.includes("404") ||
+                            errorMessage.includes("FILE_NOT_FOUND");
       if (!isNetworkError) {
-        console.error("[AudioManager] Failed to load background noise:", error, { fileUri });
+        console.error("[AudioManager] Failed to load background noise:", errorMessage, { fileUri });
       } else {
-        console.log("[AudioManager] Background noise unavailable (file may not exist)");
+        console.log("[AudioManager] Background noise unavailable (file may not exist)", { fileUri, error: errorMessage });
       }
       // Don't throw - allow playback to continue without background sound
       return null;
@@ -481,13 +544,47 @@ export function useAudioManager() {
   };
 
   /**
+   * Check if audio is ready to play
+   */
+  const isReady = useCallback((): boolean => {
+    // For playlist system, check if first affirmation is loaded
+    if (playlist.length > 0) {
+      const firstAffirmation = playlist[0];
+      const sound = playlistSoundsRef.current.get(firstAffirmation.id);
+      if (!sound) {
+        console.log("[AudioManager] isReady: Playlist exists but first affirmation not loaded");
+        return false;
+      }
+      // Verify sound is loaded
+      return true;
+    }
+    // For legacy system, check if affirmations sound exists
+    if (affirmationsSound) {
+      return true;
+    }
+    // If we have binaural or background, we can still play (affirmations might load later)
+    if (binauralSound !== null || backgroundSound !== null) {
+      return true;
+    }
+
+    console.log("[AudioManager] isReady: No audio loaded (playlist empty, no affirmationsSound, no binaural/background)");
+    return false;
+  }, [playlist, affirmationsSound, binauralSound, backgroundSound]);
+
+  /**
    * Play all tracks with fade-in timing:
    * - Binaural beats and background: start at volume 0, fade in over 3 seconds
    * - Wait 2 more seconds (total 5 seconds)
    * - Then start affirmations playlist
    */
-  const play = async () => {
+  const play = useCallback(async () => {
     try {
+      // Check if audio is ready
+      if (!isReady()) {
+        console.warn("[AudioManager] Audio not ready yet, cannot play");
+        throw new Error("Audio is not ready yet. Please wait for loading to complete.");
+      }
+
       const FADE_IN_DURATION = 3000; // 3 seconds in milliseconds
       const AFFIRMATION_DELAY = 5000; // 5 seconds total (3s fade + 2s wait)
       
@@ -520,13 +617,14 @@ export function useAudioManager() {
       }, AFFIRMATION_DELAY);
     } catch (error) {
       console.error("[AudioManager] Failed to play:", error);
+      throw error; // Re-throw so caller can handle it
     }
-  };
+  }, [isReady, playlist, affirmationsSound, binauralSound, backgroundSound, binauralVolumeRef, backgroundVolumeRef]);
 
   /**
    * Pause all tracks
    */
-  const pause = async () => {
+  const pause = useCallback(async () => {
     try {
       // Pause current affirmation
       const currentAffirmation = playlist[currentAffirmationIndex];
@@ -552,12 +650,12 @@ export function useAudioManager() {
     } catch (error) {
       console.error("[AudioManager] Failed to pause:", error);
     }
-  };
+  }, [playlist, currentAffirmationIndex, affirmationsSound, binauralSound, backgroundSound]);
 
   /**
    * Seek to position (in seconds)
    */
-  const seek = async (time: number) => {
+  const seek = useCallback(async (time: number) => {
     try {
       if (affirmationsSound) {
         await affirmationsSound.setPositionAsync(time * 1000);
@@ -567,22 +665,30 @@ export function useAudioManager() {
     } catch (error) {
       console.error("[AudioManager] Failed to seek:", error);
     }
-  };
+  }, [affirmationsSound]);
 
   /**
    * Cleanup all players
+   * Uses refs to ensure current sounds are unloaded even if closure is stale
    */
-  const cleanup = async () => {
+  const cleanup = useCallback(async () => {
+    console.log("[AudioManager] Cleanup called");
     try {
-      if (affirmationsSound) {
-        await affirmationsSound.unloadAsync();
+      if (affirmationsSoundRef.current) {
+        await affirmationsSoundRef.current.unloadAsync();
       }
-      if (binauralSound) {
-        await binauralSound.unloadAsync();
+      if (binauralSoundRef.current) {
+        await binauralSoundRef.current.unloadAsync();
       }
-      if (backgroundSound) {
-        await backgroundSound.unloadAsync();
+      if (backgroundSoundRef.current) {
+        await backgroundSoundRef.current.unloadAsync();
       }
+      
+      // Also cleanup playlist sounds
+      playlistSoundsRef.current.forEach((sound) => {
+        sound.unloadAsync().catch(console.error);
+      });
+      playlistSoundsRef.current.clear();
     } catch (error) {
       console.error("[AudioManager] Error during cleanup:", error);
     }
@@ -592,7 +698,7 @@ export function useAudioManager() {
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-  };
+  }, []); // Stable callback with no dependencies
 
   // Apply volume changes when sounds are loaded
   // Note: Binaural and background start at volume 0 for fade-in, so don't override here
@@ -605,17 +711,32 @@ export function useAudioManager() {
   // Don't auto-set volume for binaural/background - they start at 0 for fade-in
   // Volume will be set during play() with fade-in animation
 
-  // Cleanup on unmount
+  // Register/unregister global audio manager
+  // This effect updates whenever controls change, but does NOT cleanup audio
+  // (That prevents cleanup from running on every state change)
   useEffect(() => {
+    registerGlobalAudioManager({
+      play,
+      pause,
+      seek,
+      isReady,
+    });
+
     return () => {
-      // Note: cleanup is async but we can't await in cleanup function
-      // This is acceptable as cleanup will still execute
-      cleanup().catch((error) => {
-        console.error("[AudioManager] Error in cleanup:", error);
-      });
+      unregisterGlobalAudioManager();
+      // Do NOT call cleanup() here - that would unload audio on every state change
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [play, pause, seek, isReady]); // Include controls in deps
+
+  // Run full audio cleanup ONLY when the hook unmounts (not on every state change)
+  useEffect(() => {
+    return () => {
+      cleanup().catch((error) => {
+        console.error("[AudioManager] Error in cleanup on unmount:", error);
+      });
+    };
+  }, []); // Empty deps = only run on unmount
 
   return {
     // State
@@ -633,6 +754,7 @@ export function useAudioManager() {
     play,
     pause,
     seek,
+    isReady,
     
     // Volume controls
     setAffirmationsVolume,

@@ -14,14 +14,18 @@ import { authClient } from "./authClient";
 /**
  * Backend URL Configuration
  *
- * The backend URL is dynamically set by the Vibecode environment at runtime.
- * Format: https://[UNIQUE_ID].share.sandbox.dev/
- * This allows the app to connect to different backend instances without code changes.
+ * The backend URL is set via environment variable.
+ * 
+ * For local development, use http://localhost:3000
+ * For network access from physical devices, use http://[YOUR_LOCAL_IP]:3000
  */
-const BACKEND_URL = process.env.EXPO_PUBLIC_VIBECODE_BACKEND_URL;
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 if (!BACKEND_URL) {
-  throw new Error("Backend URL setup has failed. Please contact support@vibecodeapp.com for help.");
+  throw new Error("Backend URL setup has failed. Please set EXPO_PUBLIC_BACKEND_URL in your .env file.");
 }
+
+// Log the backend URL on initialization for debugging
+console.log(`[api.ts] Backend URL configured: ${BACKEND_URL}`);
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 
@@ -48,7 +52,7 @@ type FetchOptions = {
  *
  * @throws Error if the response is not ok (status code outside 200-299 range)
  */
-const fetchFn = async <T>(path: string, options: FetchOptions): Promise<T> => {
+async function fetchFn<T>(path: string, options: FetchOptions): Promise<T> {
   const { method, body } = options;
   // Step 1: Authentication - Retrieve session cookies from the auth client
   // These cookies are used to identify the user and maintain their session
@@ -64,59 +68,85 @@ const fetchFn = async <T>(path: string, options: FetchOptions): Promise<T> => {
     const fullUrl = `${BACKEND_URL}${path}`;
     console.log(`[api.ts] Making ${method} request to:`, fullUrl);
 
-    const response = await fetch(fullUrl, {
-      method,
-      headers: {
-        // Always send JSON content type since our API uses JSON
-        "Content-Type": "application/json",
-        // Include authentication cookies if available
-        ...(cookies ? { Cookie: cookies } : {}),
-      },
-      // Stringify the body if present (for POST, PUT, PATCH requests)
-      body: body ? JSON.stringify(body) : undefined,
-      // Use "omit" to prevent browser from automatically sending credentials
-      // We manually handle cookies via the Cookie header for more control
-      credentials: "omit",
-    });
+    // Add timeout to prevent hanging requests
+    // Use AbortController for timeout (60 seconds for generation, 30 seconds for others)
+    const timeoutMs = path.includes("/generate") ? 60000 : 30000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    console.log(`[api.ts] Response status: ${response.status} ${response.statusText}`);
-    console.log(`[api.ts] Response headers:`, Object.fromEntries(response.headers.entries()));
+    try {
+      const response = await fetch(fullUrl, {
+        method,
+        headers: {
+          // Always send JSON content type since our API uses JSON
+          "Content-Type": "application/json",
+          // Include authentication cookies if available
+          ...(cookies ? { Cookie: cookies } : {}),
+        },
+        // Stringify the body if present (for POST, PUT, PATCH requests)
+        body: body ? JSON.stringify(body) : undefined,
+        // Use "omit" to prevent browser from automatically sending credentials
+        // We manually handle cookies via the Cookie header for more control
+        credentials: "omit",
+        signal: controller.signal,
+      });
 
-    // Step 3: Error handling - Check if the response was successful
-    if (!response.ok) {
-      // Try to parse the error details from the response body
-      let errorData;
-      const contentType = response.headers.get("content-type");
+      clearTimeout(timeoutId);
 
-      try {
-        if (contentType?.includes("application/json")) {
-          errorData = await response.json();
-        } else {
-          // If not JSON, get the text response
-          const textResponse = await response.text();
-          console.error(`[api.ts] Non-JSON error response:`, textResponse.substring(0, 200));
-          errorData = { message: textResponse.substring(0, 100) };
+      console.log(`[api.ts] Response status: ${response.status} ${response.statusText}`);
+      console.log(`[api.ts] Response headers:`, Object.fromEntries(response.headers.entries()));
+
+      // Step 3: Error handling - Check if the response was successful
+      if (!response.ok) {
+        // Try to parse the error details from the response body
+        let errorData;
+        const contentType = response.headers.get("content-type");
+
+        try {
+          if (contentType?.includes("application/json")) {
+            errorData = await response.json();
+          } else {
+            // If not JSON, get the text response
+            const textResponse = await response.text();
+            console.error(`[api.ts] Non-JSON error response:`, textResponse.substring(0, 200));
+            errorData = { message: textResponse.substring(0, 100) };
+          }
+        } catch {
+          errorData = { message: "Failed to parse error response" };
         }
-      } catch {
-        errorData = { message: "Failed to parse error response" };
+
+        // Throw a descriptive error with status code, status text, and server error data
+        throw new Error(
+          `[api.ts]: ${response.status} ${response.statusText} ${JSON.stringify(errorData)}`,
+        );
       }
 
-      // Throw a descriptive error with status code, status text, and server error data
-      throw new Error(
-        `[api.ts]: ${response.status} ${response.statusText} ${JSON.stringify(errorData)}`,
-      );
-    }
+      // Step 4: Parse and return the successful response as JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        const textResponse = await response.text();
+        console.error(`[api.ts] Expected JSON but got:`, textResponse.substring(0, 200));
+        throw new Error(`Expected JSON response but got ${contentType}`);
+      }
 
-    // Step 4: Parse and return the successful response as JSON
-    const contentType = response.headers.get("content-type");
-    if (!contentType?.includes("application/json")) {
-      const textResponse = await response.text();
-      console.error(`[api.ts] Expected JSON but got:`, textResponse.substring(0, 200));
-      throw new Error(`Expected JSON response but got ${contentType}`);
+      // The response is cast to the expected type T for type safety
+      return (await response.json()) as T;
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      // Check if it was a timeout/abort
+      if (fetchError instanceof Error && fetchError.name === "AbortError") {
+        const errorMsg = `Network request timed out after ${timeoutMs}ms. Backend URL: ${BACKEND_URL}. Please ensure the backend server is running.`;
+        console.error(`[api.ts] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      // Check for network errors (connection refused, etc.)
+      if (fetchError instanceof TypeError && fetchError.message.includes("fetch")) {
+        const errorMsg = `Failed to connect to backend at ${BACKEND_URL}. Please ensure the backend server is running. Original error: ${fetchError.message}`;
+        console.error(`[api.ts] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      throw fetchError;
     }
-
-    // The response is cast to the expected type T for type safety
-    return response.json() as Promise<T>;
   } catch (error) {
     // Only log non-auth errors to avoid cluttering logs with expected 401s
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -126,7 +156,7 @@ const fetchFn = async <T>(path: string, options: FetchOptions): Promise<T> => {
     // Re-throw the error so the calling code can handle it appropriately
     throw error;
   }
-};
+}
 
 /**
  * API Client Object

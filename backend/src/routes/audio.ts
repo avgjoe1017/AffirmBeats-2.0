@@ -92,27 +92,24 @@ audioRouter.get("/binaural/:filename", async (c) => {
       logger.warn("Supabase file not found, falling back to local", { filename });
     }
 
-    // Try optimized files first (assets/audio/binaural/)
+    // Only use optimized files (assets/audio/binaural/) - no legacy .wav files available
     let filePath: string | null = null;
     const optimizedPath = path.join(optimizedAudioRoot, "binaural", filename);
     const normalizedOptimizedPath = path.normalize(optimizedPath);
     const normalizedOptimizedRoot = path.normalize(path.join(optimizedAudioRoot, "binaural"));
     
+    logger.debug("Checking binaural file", { 
+      filename,
+      optimizedPath: normalizedOptimizedPath,
+      optimizedRoot: normalizedOptimizedRoot,
+      optimizedExists: fs.existsSync(normalizedOptimizedPath),
+      optimizedRootExists: fs.existsSync(normalizedOptimizedRoot)
+    });
+    
     // Check if optimized file exists and is within allowed directory
     if (normalizedOptimizedPath.startsWith(normalizedOptimizedRoot) && fs.existsSync(normalizedOptimizedPath)) {
       filePath = normalizedOptimizedPath;
-      logger.debug("Using optimized binaural file", { filename, filePath });
-    } else {
-      // Fall back to legacy files (raw audio files/ZENmix - Pure Binaural Beats/)
-      const legacyPath = path.join(rawAudioFilesRoot, "ZENmix - Pure Binaural Beats", filename);
-      const normalizedLegacyPath = path.normalize(legacyPath);
-      const normalizedLegacyRoot = path.normalize(path.join(rawAudioFilesRoot, "ZENmix - Pure Binaural Beats"));
-      
-      // Ensure the resolved path is within the allowed directory
-      if (normalizedLegacyPath.startsWith(normalizedLegacyRoot) && fs.existsSync(normalizedLegacyPath)) {
-        filePath = normalizedLegacyPath;
-        logger.debug("Using legacy binaural file", { filename, filePath });
-      }
+      logger.info("Using optimized binaural file", { filename, filePath });
     }
 
     // Check if file exists
@@ -120,12 +117,12 @@ audioRouter.get("/binaural/:filename", async (c) => {
       logger.warn("Binaural audio file not found", { 
         filename, 
         checkedOptimized: normalizedOptimizedPath,
-        checkedLegacy: path.join(rawAudioFilesRoot, "ZENmix - Pure Binaural Beats", filename)
+        optimizedRoot: normalizedOptimizedRoot
       });
       return c.json({ 
         error: "FILE_NOT_FOUND",
         code: "FILE_NOT_FOUND",
-        message: "File not found" 
+        message: `Binaural audio file not found: ${filename}. Only optimized .m4a files are available.` 
       }, 404);
     }
 
@@ -214,8 +211,21 @@ audioRouter.get("/binaural/:filename", async (c) => {
 audioRouter.get("/background/*", async (c) => {
   try {
     // Get the full path after /background/
-    const fullPath = c.req.param("*") || "";
-    const pathParts = fullPath.split("/").filter(Boolean).map(p => decodeURIComponent(p));
+    // Use c.req.path to get the full path, then extract the part after /background/
+    const requestPath = c.req.path;
+    const backgroundPrefix = "/api/audio/background/";
+    
+    if (!requestPath.startsWith(backgroundPrefix)) {
+      logger.warn("Invalid background audio request path", { requestPath });
+      return c.json({ 
+        error: "INVALID_PATH",
+        code: "INVALID_PATH",
+        message: "Invalid path format" 
+      }, 400);
+    }
+    
+    const fullPath = requestPath.substring(backgroundPrefix.length);
+    const pathParts = fullPath.split("/").filter(Boolean);
     
     let subdirectory: string | null = null;
     let filename: string;
@@ -239,15 +249,22 @@ audioRouter.get("/background/*", async (c) => {
     logger.debug("Serving background audio file", { filename, subdirectory });
 
     // Try Supabase Storage first (if configured)
+    // Construct the Supabase path: include subdirectory if present
+    const supabasePath = subdirectory ? `${subdirectory}/${filename}` : filename;
+    
     if (isSupabaseConfigured()) {
-      const supabasePath = subdirectory ? `${subdirectory}/${filename}` : filename;
-      const signedUrl = await getSignedUrl(STORAGE_BUCKETS.BACKGROUND, supabasePath, 3600);
-      if (signedUrl) {
-        logger.info("Redirecting to Supabase Storage", { filename, subdirectory, bucket: STORAGE_BUCKETS.BACKGROUND });
-        return c.redirect(signedUrl, 302);
+      try {
+        const signedUrl = await getSignedUrl(STORAGE_BUCKETS.BACKGROUND, supabasePath, 3600);
+        if (signedUrl) {
+          logger.info("Redirecting to Supabase Storage", { filename, subdirectory, bucket: STORAGE_BUCKETS.BACKGROUND, path: supabasePath });
+          return c.redirect(signedUrl, 302);
+        }
+        // If Supabase fails, fall through to local file serving
+        logger.warn("Supabase file not found, falling back to local", { filename, subdirectory, path: supabasePath });
+      } catch (error) {
+        // If Supabase fails, fall through to local file serving
+        logger.warn("Supabase error, falling back to local", { filename, subdirectory, path: supabasePath, error: error instanceof Error ? error.message : String(error) });
       }
-      // If Supabase fails, fall through to local file serving
-      logger.warn("Supabase file not found, falling back to local", { filename, subdirectory });
     }
 
     // Security: Prevent path traversal attacks
@@ -265,17 +282,16 @@ audioRouter.get("/background/*", async (c) => {
 
     // Try optimized files first (assets/audio/background/)
     if (subdirectory) {
+      // New format: /background/subdirectory/filename
       const optimizedPath = path.join(optimizedAudioRoot, "background", subdirectory, filename);
       const normalizedOptimizedPath = path.normalize(optimizedPath);
       const normalizedOptimizedRoot = path.normalize(path.join(optimizedAudioRoot, "background", subdirectory));
       
-      logger.info("Checking optimized background file", { 
+      logger.debug("Checking optimized background file (with subdirectory)", { 
         filename, 
         subdirectory, 
-        optimizedPath,
-        normalizedOptimizedPath,
-        normalizedOptimizedRoot,
-        optimizedAudioRoot,
+        optimizedPath: normalizedOptimizedPath,
+        optimizedRoot: normalizedOptimizedRoot,
         exists: fs.existsSync(normalizedOptimizedPath),
         startsWith: normalizedOptimizedPath.startsWith(normalizedOptimizedRoot)
       });
@@ -285,50 +301,53 @@ audioRouter.get("/background/*", async (c) => {
         filePath = normalizedOptimizedPath;
         logger.info("Using optimized background file", { filename, subdirectory, filePath });
       } else {
-        logger.warn("Optimized background file not found or invalid", { 
+        logger.debug("Optimized background file not found (with subdirectory)", { 
           filename, 
           subdirectory, 
           optimizedPath: normalizedOptimizedPath,
-          normalizedOptimizedRoot,
           exists: fs.existsSync(normalizedOptimizedPath),
           directoryExists: fs.existsSync(path.dirname(normalizedOptimizedPath))
         });
       }
-    }
-
-    // Fall back to legacy files if optimized not found
-    if (!filePath) {
-      const possibleDirectories = [
-        "ZENmix - Roots",
-        "ZENmix - Postive Flow",
-        "ZENmix - Dreamscape",
-        "ZENmix - Ancient Healing",
-      ];
-
-      for (const directory of possibleDirectories) {
-        const possiblePath = path.join(rawAudioFilesRoot, directory, filename);
-        const normalizedPath = path.normalize(possiblePath);
-        const normalizedRoot = path.normalize(path.join(rawAudioFilesRoot, directory));
+    } else {
+      // Old format: /background/filename (no subdirectory)
+      // Try optimized files in common subdirectories (looped is most common)
+      const possibleSubdirs = ["looped"];
+      for (const subdir of possibleSubdirs) {
+        const optimizedPath = path.join(optimizedAudioRoot, "background", subdir, filename);
+        const normalizedOptimizedPath = path.normalize(optimizedPath);
+        const normalizedOptimizedRoot = path.normalize(path.join(optimizedAudioRoot, "background", subdir));
         
-        // Ensure the resolved path is within the allowed directory
-        if (!normalizedPath.startsWith(normalizedRoot)) {
-          continue;
-        }
-
-        if (fs.existsSync(normalizedPath)) {
-          filePath = normalizedPath;
-          logger.debug("Using legacy background file", { filename, directory, filePath });
+        if (normalizedOptimizedPath.startsWith(normalizedOptimizedRoot) && fs.existsSync(normalizedOptimizedPath)) {
+          filePath = normalizedOptimizedPath;
+          logger.info("Using optimized background file (found in subdirectory)", { filename, subdirectory: subdir, filePath });
           break;
         }
       }
+      
+      if (!filePath) {
+        logger.debug("Optimized background file not found (no subdirectory provided)", { 
+          filename,
+          checkedSubdirs: possibleSubdirs
+        });
+      }
     }
 
+    // No legacy fallback - only optimized files are available
+    // Legacy .mp3 files are not used anymore
+
     if (!filePath) {
-      logger.warn("Background audio file not found", { filename, subdirectory });
+      logger.warn("Background audio file not found", { 
+        filename, 
+        subdirectory,
+        checkedOptimized: subdirectory 
+          ? path.join(optimizedAudioRoot, "background", subdirectory, filename)
+          : path.join(optimizedAudioRoot, "background", "looped", filename)
+      });
       return c.json({ 
         error: "FILE_NOT_FOUND",
         code: "FILE_NOT_FOUND",
-        message: "File not found" 
+        message: `Background audio file not found: ${subdirectory ? `${subdirectory}/` : ""}${filename}. Only optimized .m4a files are available.` 
       }, 404);
     }
 

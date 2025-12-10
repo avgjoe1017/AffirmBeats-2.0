@@ -42,6 +42,7 @@ export const getPreferencesResponseSchema = z.object({
   noise: z.enum(["rain", "brown", "none", "ocean", "forest", "wind", "fire", "thunder"]),
   pronounStyle: z.enum(["you", "i"]),
   intensity: z.enum(["gentle", "assertive"]),
+  affirmationSpacing: z.number().int().min(1).max(60).optional(), // Seconds between affirmations (1-60)
 });
 export type GetPreferencesResponse = z.infer<typeof getPreferencesResponseSchema>;
 
@@ -52,6 +53,7 @@ export const updatePreferencesRequestSchema = z.object({
   noise: z.enum(["rain", "brown", "none", "ocean", "forest", "wind", "fire", "thunder"]).optional(),
   pronounStyle: z.enum(["you", "i"]).optional(),
   intensity: z.enum(["gentle", "assertive"]).optional(),
+  affirmationSpacing: z.number().int().min(1).max(60).optional(), // Seconds between affirmations (1-60)
 });
 export type UpdatePreferencesRequest = z.infer<typeof updatePreferencesRequestSchema>;
 

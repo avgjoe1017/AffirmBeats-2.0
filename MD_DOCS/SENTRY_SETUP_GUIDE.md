@@ -1,8 +1,10 @@
-# Sentry Setup Guide
+# Sentry Setup Guide (Comprehensive)
 
-**Priority**: 🔴 CRITICAL  
-**Estimated Effort**: 1 day  
-**Status**: Ready to implement
+**Priority**: 🔴 HIGH (Recommended)  
+**Estimated Effort**: 30 minutes (backend), 2-3 hours (full setup)  
+**Status**: ✅ Backend code ready - Just needs DSN configuration
+
+**Quick Start**: See `MD_DOCS/SENTRY_QUICK_SETUP.md` for 5-minute setup (backend only)
 
 ## Overview
 
@@ -113,34 +115,21 @@ export default function App() {
 
 ### Step 6: Initialize Sentry in Backend
 
-```typescript
-// backend/src/index.ts
-import * as Sentry from "@sentry/node";
+**✅ ALREADY IMPLEMENTED** - No code changes needed!
 
-// Initialize Sentry before everything else
-if (env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.SENTRY_ENVIRONMENT || env.NODE_ENV || "development",
-    tracesSampleRate: env.NODE_ENV === "production" ? 0.1 : 1.0,
-    integrations: [
-      // Add integrations as needed
-    ],
-    beforeSend(event, hint) {
-      // Filter out sensitive data
-      if (event.request) {
-        delete event.request.cookies;
-        delete event.request.headers?.authorization;
-      }
-      return event;
-    },
-  });
+The backend Sentry integration is already complete in `backend/src/lib/sentry.ts`. It:
+- Automatically initializes on server start
+- Filters sensitive data
+- Integrates with error handler
+- Falls back gracefully if DSN not configured
 
-  logger.info("Sentry initialized", { environment: env.SENTRY_ENVIRONMENT });
-} else {
-  logger.warn("Sentry DSN not configured, error tracking disabled");
-}
+**Just set the environment variable**:
+```bash
+SENTRY_DSN=https://your-dsn@sentry.io/project-id
+SENTRY_ENVIRONMENT=production
 ```
+
+The code will automatically pick it up on next server restart.
 
 ### Step 7: Add Error Boundaries (Frontend)
 

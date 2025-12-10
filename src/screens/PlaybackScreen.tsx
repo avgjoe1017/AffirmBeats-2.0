@@ -401,74 +401,127 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
   }, []);
 
   // Load audio tracks when session changes
+  const loadedSessionIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!session) return;
+
+    // Skip if audio is already loaded for this session
+    if (loadedSessionIdRef.current === session.id) {
+      console.log("[PlaybackScreen] Audio already loaded for session:", session.id);
+      return;
+    }
+
+    // If we have a previous session loaded, cleanup manually before loading new
+    // This handles session switching while staying on the screen
+    if (loadedSessionIdRef.current) {
+      console.log("[PlaybackScreen] Session changed, cleaning up previous audio");
+      audioManager.cleanup();
+    }
 
     const loadAudio = async () => {
       try {
         setIsLoadingAudio(true);
+        loadedSessionIdRef.current = session.id;
         console.log("[PlaybackScreen] Loading audio for session:", session.id);
 
-        // Load affirmations playlist (NEW: individual affirmation audio files)
-        // Fallback to legacy system if session doesn't have an ID (e.g., default sessions)
-        if (session.id && !session.id.startsWith("default-")) {
-          try {
-            await audioManager.loadAffirmationPlaylist(session.id);
-          } catch (error) {
-            console.error("[PlaybackScreen] Failed to load playlist - session may not have individual affirmations yet:", error);
-            // Fallback to legacy system only as last resort
-            console.warn("[PlaybackScreen] Falling back to legacy TTS system");
-            await audioManager.loadAffirmations(
-              session.affirmations,
-              (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
-              (session.pace || "normal") as "slow" | "normal",
-              preferences.affirmationSpacing || 8,
-              session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
-            );
-          }
-        } else {
-          // Legacy system for default sessions or sessions without IDs
-          await audioManager.loadAffirmations(
-            session.affirmations,
-            (session.voiceId || "neutral") as "neutral" | "confident" | "whisper",
-            (session.pace || "normal") as "slow" | "normal",
-            preferences.affirmationSpacing || 8,
-            session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
-          );
-        }
-
-        // Load binaural beats if category is available
-        // Prefer optimized files (3-minute AAC loops) over legacy WAV files
-        if (session.binauralCategory) {
-          try {
-            const binauralUrl = getBinauralBeatUrl(
+        // OPTIMIZATION: Load all audio types in parallel instead of sequentially
+        // This reduces total loading time from sum to max
+        const hasPremiumAccess = subscription?.tier === "pro";
+        const binauralUrl = session.binauralCategory
+          ? getBinauralBeatUrl(
               session.binauralCategory as BinauralCategory,
               BACKEND_URL,
               true // useOptimized = true (prefer optimized files)
-            );
-            console.log("[PlaybackScreen] Loading binaural beats from:", binauralUrl);
-            await audioManager.loadBinauralBeats(binauralUrl);
-          } catch (error) {
-            console.warn("[PlaybackScreen] Could not load binaural beats:", error);
-          }
-        }
-
-        // Load background noise
-        const hasPremiumAccess = subscription?.tier === "pro";
+            )
+          : null;
         const backgroundUrl = getBackgroundSoundUrl(
           (session.noise || "none") as BackgroundSound, 
           BACKEND_URL,
           true, // useOptimized
           hasPremiumAccess
         );
-        if (backgroundUrl) {
-          try {
-            console.log("[PlaybackScreen] Loading background sound from:", backgroundUrl);
-            await audioManager.loadBackgroundNoise(backgroundUrl);
-          } catch (error) {
-            console.warn("[PlaybackScreen] Could not load background noise:", error);
-          }
+
+        // Load all audio types in parallel
+        const loadPromises: Promise<any>[] = [];
+
+        // Load affirmations playlist (NEW: individual affirmation audio files)
+        // Default sessions can now use the playlist endpoint (which allows premium voices)
+        if (session.id) {
+          loadPromises.push(
+            audioManager.loadAffirmationPlaylist(session.id).catch((error) => {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              const isExpectedError = errorMessage.includes("Session not saved") || 
+                                     errorMessage.includes("no individual affirmations") ||
+                                     errorMessage.includes("Session default-");
+              
+              if (isExpectedError) {
+                console.log(`[PlaybackScreen] Using legacy TTS for session (expected): ${errorMessage}`);
+              } else {
+                console.error("[PlaybackScreen] Failed to load playlist - session may not have individual affirmations yet:", error);
+              }
+              
+              // Fallback to legacy system only as last resort
+              if (isExpectedError) {
+                 console.log("[PlaybackScreen] Falling back to legacy TTS system");
+              } else {
+                 console.warn("[PlaybackScreen] Falling back to legacy TTS system");
+              }
+              
+              // Normalize voice to supported set (handle legacy "whisper" value)
+              const rawVoiceId = session.voiceId || "neutral";
+              const safeVoiceId: "neutral" | "confident" | "whisper" = rawVoiceId === "whisper" 
+                ? "neutral" 
+                : (rawVoiceId === "confident" ? "confident" : "neutral");
+              
+              return audioManager.loadAffirmations(
+                session.affirmations,
+                safeVoiceId,
+                (session.pace || "normal") as "slow" | "normal",
+                preferences.affirmationSpacing || 8,
+                session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
+              );
+            })
+          );
+        } else {
+          // Legacy system only for sessions without IDs (shouldn't happen, but keep as fallback)
+          // Normalize voice to supported set (handle legacy "whisper" value)
+          const rawVoiceId = session.voiceId || "neutral";
+          const safeVoiceId: "neutral" | "confident" | "whisper" = rawVoiceId === "whisper" 
+            ? "neutral" 
+            : (rawVoiceId === "confident" ? "confident" : "neutral");
+          
+          loadPromises.push(
+            audioManager.loadAffirmations(
+              session.affirmations,
+              safeVoiceId,
+              (session.pace || "normal") as "slow" | "normal",
+              preferences.affirmationSpacing || 8,
+              session.goal as "sleep" | "focus" | "calm" | "manifest" | undefined
+            )
+          );
         }
+
+        // Load binaural beats in parallel
+        if (binauralUrl) {
+          loadPromises.push(
+            audioManager.loadBinauralBeats(binauralUrl).catch((error) => {
+              console.warn("[PlaybackScreen] Could not load binaural beats:", error);
+            })
+          );
+        }
+
+        // Load background noise in parallel
+        if (backgroundUrl) {
+          loadPromises.push(
+            audioManager.loadBackgroundNoise(backgroundUrl).catch((error) => {
+              console.warn("[PlaybackScreen] Could not load background noise:", error);
+            })
+          );
+        }
+
+        // Wait for all audio types to load in parallel
+        await Promise.all(loadPromises);
 
         // Apply volume settings
         await audioManager.setAffirmationsVolume(audioMixerVolumes.affirmations);
@@ -484,13 +537,18 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
     };
 
     loadAudio();
+  }, [session?.id]); // Only reload when session ID changes
 
-    // Cleanup on unmount or session change
+  // Cleanup on unmount
+  // Use stable cleanup function to avoid re-running effect
+  const { cleanup } = audioManager;
+  useEffect(() => {
     return () => {
-      audioManager.cleanup();
+      console.log("[PlaybackScreen] Unmounting, cleaning up audio session");
+      cleanup();
+      loadedSessionIdRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id]); // Only reload when session ID changes - audioManager is stable
+  }, [cleanup]);
 
   // Sync audio manager state with app store
   // Use refs to track last values and prevent infinite loops
@@ -549,7 +607,17 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
     return (
       <View className="flex-1 bg-black justify-center items-center">
         <Text className="text-white text-lg">Session not found</Text>
-        <Pressable onPress={() => navigation.goBack()} className="mt-4">
+        <Pressable 
+          onPress={() => {
+            // Check if we can go back, otherwise navigate to home
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.replace("Tabs", { screen: "HomeTab" });
+            }
+          }} 
+          className="mt-4"
+        >
           <Text className="text-purple-400 text-base">Go Back</Text>
         </Pressable>
       </View>
@@ -564,14 +632,44 @@ const PlaybackScreen = ({ navigation, route }: Props) => {
   };
 
   const togglePlay = async () => {
-    if (isLoadingAudio) return;
+    if (isLoadingAudio) {
+      Alert.alert(
+        "Loading Audio",
+        "Please wait for audio to finish loading before playing.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
-    if (isPlaying) {
-      await audioManager.pause();
-    } else {
-      await audioManager.play();
+    try {
+      if (isPlaying) {
+        await audioManager.pause();
+      } else {
+        // Check if audio is ready
+        const ready = audioManager.isReady();
+        console.log("[PlaybackScreen] togglePlay - isReady:", ready);
+        
+        if (!ready) {
+          Alert.alert(
+            "Audio Not Ready",
+            "Audio is still loading. Please wait a moment and try again.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
+        await audioManager.play();
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("[PlaybackScreen] Error toggling play:", error);
+      Alert.alert(
+        "Playback Error",
+        `Could not ${isPlaying ? "pause" : "start"} playback: ${errorMessage}`,
+        [{ text: "OK" }]
+      );
     }
   };
 

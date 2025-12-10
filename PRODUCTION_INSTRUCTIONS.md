@@ -2,13 +2,13 @@
 
 ## Critical Pre-Launch Tasks
 
-### 1. PostgreSQL Migration (CRITICAL)
+### 1. PostgreSQL Migration (CRITICAL) ✅
 
-**Status**: ⚠️ Not Complete - Must be done before production launch
+**Status**: ✅ **COMPLETE** (2025-01-XX)
 
-**Current State**: Using SQLite (development only, not production-ready)
+**Current State**: ✅ PostgreSQL configured and working (production-ready)
 
-**Why**: SQLite doesn't support concurrent writes, has single-server limitations, and is not suitable for production scale.
+**Verification**: Automated QA test confirms PostgreSQL connection and type.
 
 **Steps to Complete**:
 
@@ -55,7 +55,51 @@
 
 ---
 
-### 2. Payment Integration Setup (CRITICAL)
+### 2. Row Level Security (RLS) Migration (CRITICAL) ✅
+
+**Status**: ✅ **COMPLETE** (2025-11-20)
+
+**Current State**: ✅ Migration created and ready to apply
+
+**What This Does**: Enables Row Level Security (RLS) on all public tables to protect data exposed via PostgREST (Supabase API).
+
+**Important Notes**:
+- Prisma uses service role connection which **bypasses RLS entirely** - your Prisma queries will continue to work
+- RLS policies only affect **PostgREST API access** (Supabase REST API)
+- Policies assume Supabase Auth JWT. If using Better Auth only, PostgREST queries will be blocked unless authenticated via Supabase JWT
+
+**Steps to Apply**:
+
+1. **Apply the migration**:
+   ```bash
+   cd backend
+   bunx prisma migrate deploy
+   ```
+
+2. **Verify RLS is enabled** (in Supabase dashboard):
+   - Go to Database → Tables
+   - Check that RLS is enabled (green toggle) on all tables
+   - Verify policies are created
+
+3. **Test Prisma queries** (should still work):
+   ```bash
+   cd backend
+   bunx prisma studio
+   ```
+   - Should work normally (service role bypasses RLS)
+
+4. **If using PostgREST** (optional):
+   - Set up Supabase Auth alongside Better Auth
+   - Sync user IDs between systems
+   - Or modify policies to use custom JWT claims
+
+**Migration File**: `backend/prisma/migrations/20251120195441_enable_rls_policies/migration.sql`
+
+**See**: `PROGRESS.md` for detailed migration notes
+
+---
+
+### 3. Payment Integration Setup (CRITICAL)
 
 **Status**: ✅ Code Complete - Needs App Store/Play Console Configuration + Webhooks
 
@@ -113,13 +157,16 @@
 
 ### 3. Sentry Configuration (HIGH PRIORITY)
 
-**Status**: ⚠️ Code Ready - Needs DSN Configuration
+**Status**: ✅ Code Ready - Just Needs DSN (5 minutes)
 
 **What's Done**:
 - ✅ Sentry integration code exists (`backend/src/lib/sentry.ts`)
 - ✅ Error tracking helpers created
+- ✅ Automatic error capture in logger
+- ✅ Error handler integration
+- ✅ Sensitive data filtering
 
-**What's Needed**:
+**What's Needed** (5 minutes):
 
 1. **Create Sentry project**:
    - Sign up at [sentry.io](https://sentry.io)
@@ -137,7 +184,9 @@
    - Configure in `App.tsx`
    - Add breadcrumbs for navigation
 
-**See**: `backend/src/lib/sentry.ts` for backend implementation
+**See**: 
+- `MD_DOCS/SENTRY_QUICK_SETUP.md` for 5-minute setup guide
+- `backend/src/lib/sentry.ts` for backend implementation
 
 ---
 

@@ -83,15 +83,16 @@ model Profile {
 }
 
 model UserPreferences {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  voice        String   @default("neutral") // neutral/confident/premium1-8
-  pace         String   @default("normal") // slow/normal
-  noise        String   @default("rain") // rain/brown/none
-  pronounStyle String   @default("you") // you/i
-  intensity    String   @default("gentle") // gentle/assertive
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voice              String   @default("neutral") // neutral/confident/premium1-8
+  pace               String   @default("normal") // slow/normal
+  noise              String   @default("rain") // rain/brown/none
+  pronounStyle       String   @default("you") // you/i
+  intensity          String   @default("gentle") // gentle/assertive
+  affirmationSpacing Int      @default(8) // Seconds between affirmations (default 8 seconds)
+  updatedAt          DateTime @updatedAt
 
   @@map("user_preferences")
 }
